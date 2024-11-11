@@ -1,0 +1,30 @@
+# Node.js dependencies
+node_modules/
+
+# Build artifacts
+artifacts/
+cache/
+
+# Hardhat specific files
+hardhat-cache/
+hardhat-deploy/
+
+# Environment variables
+.env
+
+# Logs
+*.log
+
+# IDE specific files
+.vscode/
+.idea/
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Coverage reports
+coverage/
+
+# Test results
+test-results/
