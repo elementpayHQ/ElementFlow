@@ -3,7 +3,7 @@ pragma solidity ^0.8.18;
 
 interface IOrderManagement {
     // Function to create a new order
-    function createOrder(address _userAddress, uint256 _amount) external returns (bytes32);
+    function createOrder(address _userAddress, uint256 _amount, string calldata messageHash) external returns (bytes32);
 
     // Function to settle an order
     function settleOrder(bytes32 _orderId) external;
