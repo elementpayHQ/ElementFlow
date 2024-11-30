@@ -1,45 +1,45 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.18;
 
-import '@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol';
-import '@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol';
+import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./interfaces/IOrderManagement.sol";
 
 /**
  * @title OrderManagement
- * @dev Smart contract for managing on-ramp and off-ramp orders with token-based payments.
- * Supports order creation, escrow management, refunds, and settlements.
+ * @dev A smart contract for managing on-ramp and off-ramp orders with token-based payments,
+ * including escrow, refunds, and settlements.
  */
-contract OrderManagement is IOrderManagement, PausableUpgradeable, Ownable2StepUpgradeable {
-    // Aggregator address for restricted function access
+contract OrderManagement is IOrderManagement, PausableUpgradeable, OwnableUpgradeable {
+    // Address with aggregator privileges for restricted functions
     address internal _aggregatorAddress;
 
     // Basis points denominator (used for fee calculations)
     uint256 internal constant MAX_BPS = 100_000;
 
-    /// Enum to represent the current status of an order
+    /// Enum representing the current status of an order
     enum OrderStatus { Pending, Completed, Cancelled }
 
-    /// Enum to represent the type of an order
+    /// Enum representing the type of an order
     enum OrderType { OnRamp, OffRamp }
 
-    /// Struct to store order details
+    /// Struct for storing detailed order data
     struct Order {
-        bytes32 orderId;       // Unique order identifier
-        address requester;     // Address of the order requester
-        address provider;      // Address of the service provider (if any)
-        address token;         // Token used in the transaction
-        uint256 amount;        // Amount of tokens involved
+        bytes32 orderId;       // Unique identifier for the order
+        address requester;     // Address of the order creator
+        address provider;      // Address of the escrow provider
+        address token;         // ERC20 token used for the transaction
+        uint256 amount;        // Token amount involved in the order
         OrderStatus status;    // Current status of the order
         OrderType orderType;   // Type of the order (on-ramp/off-ramp)
-        string messageHash;    // Message hash for additional order details
+        string messageHash;    // Additional order metadata stored as a hash
     }
 
     // Mapping of order IDs to Order structs
     mapping(bytes32 => Order) public orders;
 
-    // Events for order lifecycle actions
+    // Events for tracking key lifecycle actions
     event OrderCreated(
         bytes32 indexed orderId,
         address indexed token,
@@ -53,43 +53,43 @@ contract OrderManagement is IOrderManagement, PausableUpgradeable, Ownable2StepU
     event EscrowReleased(bytes32 indexed orderId);
 
     /**
-     * @dev Initializes the contract with the owner and sets up base configurations.
+     * @notice Contract constructor to set the aggregator address.
+     * @param aggregator The address of the aggregator.
      */
-    function initialize() external initializer {
-        __Ownable2Step_init();
-        __Pausable_init();
+    constructor(address aggregator) {
+        require(aggregator != address(0), "Invalid aggregator address");
+        _aggregatorAddress = aggregator;
     }
 
     /**
-     * @dev Restricts access to functions to the aggregator address only.
+     * @dev Restricts access to aggregator-only functions.
      */
     modifier onlyAggregator() {
-        require(msg.sender == _aggregatorAddress, "OnlyAggregator");
+        require(msg.sender == _aggregatorAddress, "Caller is not the aggregator");
         _;
     }
 
     /**
      * @notice Creates a new order.
      * @param _userAddress Address of the requester creating the order.
-     * @param _amount Amount of tokens for the order.
-     * @param _token Address of the token being traded.
-     * @param messageHash Additional details as a hash string.
-     * @return orderId The unique identifier for the created order.
+     * @param _amount Token amount involved in the order.
+     * @param _token Address of the ERC20 token used.
+     * @param messageHash Additional order metadata.
+     * @return orderId Unique ID of the newly created order.
      */
     function createOrder(
         address _userAddress,
         uint256 _amount,
         address _token,
         string calldata messageHash
-    ) external override returns (bytes32 orderId) {
+    ) external override whenNotPaused returns (bytes32 orderId) {
+        require(_userAddress != address(0), "Invalid requester address");
         require(_amount > 0, "Amount must be greater than 0");
-        require(bytes(messageHash).length != 0, "InvalidMessageHash");
+        require(bytes(messageHash).length != 0, "Invalid message hash");
 
-        // Generate a unique order ID based on timestamp, user address, amount, and token
         orderId = keccak256(abi.encodePacked(block.timestamp, _userAddress, _amount, _token));
         require(orders[orderId].requester == address(0), "Order already exists");
 
-        // Save order details
         orders[orderId] = Order({
             orderId: orderId,
             requester: _userAddress,
@@ -101,100 +101,99 @@ contract OrderManagement is IOrderManagement, PausableUpgradeable, Ownable2StepU
             messageHash: messageHash
         });
 
-        emit OrderCreated(orderId, _token, _userAddress, _amount, messageHash, 0); // `_rate` can be used if needed
+        emit OrderCreated(orderId, _token, _userAddress, _amount, messageHash, 0);
     }
 
     /**
-     * @notice Escrows funds for an order by the provider.
-     * @param _orderId Unique ID of the order.
-     * @param _amount Amount to be escrowed (must match order amount).
+     * @notice Assigns a provider and marks funds as escrowed for an order.
+     * @param _orderId ID of the order.
+     * @param _amount Amount being escrowed (must match order amount).
      */
-    function escrowFunds(bytes32 _orderId, uint256 _amount) external override {
+    function escrowFunds(bytes32 _orderId, uint256 _amount) external override whenNotPaused {
         Order storage order = orders[_orderId];
         require(order.status == OrderStatus.Pending, "Order is not pending");
-        require(order.amount == _amount, "Incorrect amount");
+        require(order.amount == _amount, "Escrow amount mismatch");
+        require(order.provider == address(0), "Order already has a provider");
 
-        // Assign provider and record escrow
         order.provider = msg.sender;
         emit EscrowReleased(_orderId);
     }
 
     /**
-     * @notice Cancels and refunds an order.
-     * @param _orderId Unique ID of the order.
+     * @notice Cancels an order and marks it for refund.
+     * @param _orderId ID of the order.
      */
-    function refundOrder(bytes32 _orderId) external override {
+    function refundOrder(bytes32 _orderId) external override whenNotPaused {
         Order storage order = orders[_orderId];
         require(order.status == OrderStatus.Pending, "Order is not pending");
 
-        // Mark order as cancelled
         order.status = OrderStatus.Cancelled;
         emit OrderRefunded(_orderId);
     }
 
     /**
-     * @notice Releases escrow funds, marking the order as completed.
-     * @param _orderId Unique ID of the order.
+     * @notice Releases escrow and completes an order.
+     * @param _orderId ID of the order.
      */
-    function releaseEscrow(bytes32 _orderId) external override {
+    function releaseEscrow(bytes32 _orderId) external override whenNotPaused {
         Order storage order = orders[_orderId];
         require(order.status == OrderStatus.Pending, "Order is not pending");
+        require(order.provider == msg.sender, "Caller is not the provider");
 
-        // Mark order as completed
         order.status = OrderStatus.Completed;
         emit EscrowReleased(_orderId);
     }
 
+    //functio to take in the ordermangement ca
+
+
+
     /**
-     * @notice Settles an order, transferring the token to the requester.
-     * @param _orderId Unique ID of the order.
+     * @notice Settles an order and transfers tokens to the requester.
+     * @param _orderId ID of the order.
      */
-    function settleOrder(bytes32 _orderId) external override onlyAggregator {
+    function settleOrder(bytes32 _orderId) payable external override onlyAggregator whenNotPaused {
         Order storage order = orders[_orderId];
         require(order.status == OrderStatus.Pending, "Order is not pending");
 
-        // Ensure the contract holds sufficient funds
-        require(
-            IERC20(order.token).balanceOf(address(this)) >= order.amount,
-            "Insufficient funds"
-        );
+        IERC20 token = IERC20(order.token);
+        require(token.balanceOf(address(this)) >= order.amount, "Insufficient contract balance");
+        token.transfer(order.requester, order.amount);
 
-        // Transfer funds to the requester
-        IERC20(order.token).transfer(order.requester, order.amount);
-
-        // Mark order as settled
         order.status = OrderStatus.Completed;
         emit OrderSettled(_orderId);
     }
 
+    /**
+     * @notice Retrieves order details.
+     * @param _orderId ID of the order.
+     */
+    function getOrder(bytes32 _orderId)
+        external
+        view
+        returns (
+            bytes32 orderId,
+            address requester,
+            address provider,
+            address token,
+            uint256 amount,
+            OrderStatus status,
+            OrderType orderType,
+            string memory messageHash
+        )
+    {
+        Order memory order = orders[_orderId];
+        require(order.requester != address(0), "Order not found");
 
-	function getOrder(bytes32 _orderId)
-		external
-		view
-		returns (
-			bytes32 orderId,
-			address requester,
-			address provider,
-			address token,
-			uint256 amount,
-			OrderStatus status,
-			OrderType orderType,
-			string memory messageHash
-		)
-	{
-		Order memory order = orders[_orderId];
-		require(order.requester != address(0), "Order not found");
-
-		return (
-			order.orderId,
-			order.requester,
-			order.provider,
-			order.token,
-			order.amount,
-			order.status,
-			order.orderType,
-			order.messageHash
-		);
-	}
-
+        return (
+            order.orderId,
+            order.requester,
+            order.provider,
+            order.token,
+            order.amount,
+            order.status,
+            order.orderType,
+            order.messageHash
+        );
+    }
 }
