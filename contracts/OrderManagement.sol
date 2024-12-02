@@ -144,9 +144,25 @@ contract OrderManagement is IOrderManagement, PausableUpgradeable, OwnableUpgrad
         emit EscrowReleased(_orderId);
     }
 
-    //functio to take in the ordermangement ca
+    //function to take in the ordermangement ca
 
+    /**
+    * @notice Returns the balance of the specified ERC20 token held by the contract.
+    * @param token The address of the ERC20 token.
+    * @return The token balance of the contract.
+    */
+    function getContractBalance(address token) external view returns (uint256) {
+        require(token != address(0), "Invalid token address");
+        return IERC20(token).balanceOf(address(this));
+    }
 
+    /**
+    * @notice Returns the address of the contract.
+    * @return The contract address.
+    */
+    function getContractAddress() external view returns (address) {
+        return address(this);
+    }
 
     /**
      * @notice Settles an order and transfers tokens to the requester.
