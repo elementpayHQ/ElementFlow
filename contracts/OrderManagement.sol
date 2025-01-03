@@ -97,10 +97,6 @@ contract OrderManagement is IOrderManagement, PausableUpgradeable, OwnableUpgrad
         require(_amount > 0, "Amount must be greater than 0");
         require(bytes(messageHash).length != 0, "Invalid message hash");
 
-        // Check if the allowance is sufficient
-        uint256 allowance = IERC20(_token).allowance(_userAddress, address(this));
-        require(allowance >= _amount, "Insufficient allowance. Please approve the contract to spend tokens.");
-
         // If off-ramp, ensure user has enough balance; else if on-ramp, ensure treasury has enough balance
         if (_orderType == OrderType.OffRamp) {
             require(IERC20(_token).balanceOf(_userAddress) >= _amount, "Insufficient balance");
@@ -122,8 +118,12 @@ contract OrderManagement is IOrderManagement, PausableUpgradeable, OwnableUpgrad
             messageHash: messageHash
         });
 
-        // Transfer tokens to the contract for escrow
-        IERC20(_token).transferFrom(_userAddress, address(this), _amount);
+        // Transfer tokens from the requester to the contract if it is an off-ramp order
+        //ensure that the contract has the required allowance to spend the tokens if not request the user to approve the contract to spend the tokens
+        if (_orderType == OrderType.OffRamp) {
+            IERC20(_token).transferFrom(_userAddress, address(this), _amount);
+        }
+
 
         emit OrderCreated(orderId, _token, _userAddress, _amount, messageHash, 0, _orderType);
     }
@@ -178,6 +178,7 @@ contract OrderManagement is IOrderManagement, PausableUpgradeable, OwnableUpgrad
             address token,
             uint256 amount,
             OrderStatus status,
+            //retunr the value at the index of the enum
             OrderType orderType,
             string memory messageHash
         )

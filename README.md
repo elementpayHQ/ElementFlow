@@ -9,6 +9,8 @@
 offramp Base mainet: 0x30f6a8457f8e42371e204a9c103f2bd42341dd0f
 <br>
 <p>onramp basesepolia: 0x8698be57c454b71e86258fabb56b10facbb2a859</p>
+<br>
+<p>contract with both onrasmp/offramp: 0xd23576CF6FdA38599DDf164638764aBd22A2c0A2</p>
 
 # ElementFlow
 
