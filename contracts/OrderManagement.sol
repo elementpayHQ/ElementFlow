@@ -104,9 +104,13 @@ contract OrderManagement is IOrderManagement, PausableUpgradeable, OwnableUpgrad
                 IERC20(_token).transferFrom(_userAddress, address(this), _amount),
                 "Token transfer failed"
             );
-        } else {
+        } else if (_orderType == OrderType.OnRamp) {
+            //ensure we have enough funds in this smartcontract
+            require(IERC20(_token).balanceOf(address(this)) >= _amount, "Insufficient funds");
+        }
+        // Check balances based on order type
+        else {
             require(IERC20(_token).balanceOf(treasury) >= _amount, "Insufficient treasury balance");
-            
         }
 
         // Generate order ID
@@ -144,7 +148,7 @@ contract OrderManagement is IOrderManagement, PausableUpgradeable, OwnableUpgrad
      * @notice Cancels an order and refunds the tokens to the requester.
      * @param _orderId ID of the order.
      */
-    function refundOrder(bytes32 _orderId) external override onlyAggregator whenNotPaused {
+    function refundOrder(bytes32 _orderId) external override payable onlyAggregator whenNotPaused {
         Order storage order = orders[_orderId];
         require(order.status == OrderStatus.Pending, "Order is not pending");
         require(order.orderType == OrderType.OffRamp, "Only OffRamp orders can be refunded");
@@ -167,11 +171,12 @@ contract OrderManagement is IOrderManagement, PausableUpgradeable, OwnableUpgrad
         Order storage order = orders[_orderId];
         require(order.status == OrderStatus.Pending, "Order is not pending");
         
-        //if order is onramp we transfer tokens from treasury to user
+        //if order is onramp we transfer tokens from this smartcontract to user
         if (order.orderType == OrderType.OnRamp) {
-            require(IERC20(order.token).balanceOf(treasury) >= order.amount, "Insufficient treasury balance");
-            require(
-                IERC20(order.token).transfer(order.requester, order.amount),
+            require(IERC20(order.token).balanceOf(address(this))>= order.amount, "Insufficient funds");
+
+            require (
+                IERC20(order.token).transferFrom(address(this), order.requester, order.amount ), 
                 "Token transfer failed"
             );
         } else {
