@@ -148,7 +148,7 @@ contract OrderManagement is IOrderManagement, PausableUpgradeable, OwnableUpgrad
      * @notice Cancels an order and refunds the tokens to the requester.
      * @param _orderId ID of the order.
      */
-    function refundOrder(bytes32 _orderId) external override payable onlyAggregator whenNotPaused {
+    function refundOrder(bytes32 _orderId) external override onlyAggregator whenNotPaused {
         Order storage order = orders[_orderId];
         require(order.status == OrderStatus.Pending, "Order is not pending");
         require(order.orderType == OrderType.OffRamp, "Only OffRamp orders can be refunded");
@@ -174,11 +174,10 @@ contract OrderManagement is IOrderManagement, PausableUpgradeable, OwnableUpgrad
         //if order is onramp we transfer tokens from this smartcontract to user
         if (order.orderType == OrderType.OnRamp) {
             require(IERC20(order.token).balanceOf(address(this))>= order.amount, "Insufficient funds");
-
-            require (
-                IERC20(order.token).transferFrom(address(this), order.requester, order.amount ), 
+            require(
+                IERC20(order.token).transfer(order.requester, order.amount), 
                 "Token transfer failed"
-            );
+                );
         } else {
             //if order is offramp we transfer tokens from contract to the treasury
             require(
