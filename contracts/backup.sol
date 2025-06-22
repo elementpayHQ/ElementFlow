@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: BSL 1.1
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.18;
 
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
@@ -98,19 +98,25 @@ contract OrderManagement is IOrderManagement, PausableUpgradeable, OwnableUpgrad
         // Check balances based on order type
         if (_orderType == OrderType.OffRamp) {
             require(IERC20(_token).balanceOf(_userAddress) >= _amount, "Insufficient balance");
-
-            //if allowed transfer tokens from user to contract
+            
+            // Check if the contract has sufficient allowance from the user
+            require(
+                IERC20(_token).allowance(_userAddress, address(this)) >= _amount,
+                "Insufficient allowance. Please approve tokens first"
+            );
+            //transfer the token from user address to the contract
             require(
                 IERC20(_token).transferFrom(_userAddress, address(this), _amount),
                 "Token transfer failed"
             );
-        } else if (_orderType == OrderType.OnRamp) {
-            //ensure we have enough funds in this smartcontract
-            require(IERC20(_token).balanceOf(address(this)) >= _amount, "Insufficient funds");
-        }
-        // Check balances based on order type
-        else {
+        } else {
             require(IERC20(_token).balanceOf(treasury) >= _amount, "Insufficient treasury balance");
+            
+            // Check treasury's approval for OnRamp orders
+            require(
+                IERC20(_token).allowance(treasury, address(this)) >= _amount,
+                "Insufficient treasury allowance"
+            );
         }
 
         // Generate order ID
@@ -130,25 +136,54 @@ contract OrderManagement is IOrderManagement, PausableUpgradeable, OwnableUpgrad
         });
 
 
-
         emit OrderCreated(orderId, _token, _userAddress, _amount, messageHash, 0, _orderType);
     }
 
+
     /**
-     * @notice Helper function to check current token allowance
-     * @param _token The token address
-     * @param _owner The owner of the tokens
-     * @return The current allowance for this contract
+    * @notice Helper function to approve tokens for the contract to spend on behalf of the caller
+    * @param _token The address of the ERC20 token
+    * @param _amount The amount to approve
+    */
+    // function approveTokensForContract(address _token, uint256 _amount) external {
+    //     require(_token != address(0), "Invalid token address");
+    //     require(_amount > 0, "Amount must be greater than 0");
+
+    //     // The user (msg.sender) approves the contract to spend tokens
+    //     bool success = IERC20(_token).approve(address(this), _amount);
+    //     require(success, "Token approval failed");
+    // }
+    /**
+     * @notice Helper function to approve tokens for the contract to spend on behalf of the caller.
      */
+    function approveTokensForContract(address _token, uint256 _amount) external {
+        require(_token != address(0), "Invalid token address");
+        require(_amount > 0, "Amount must be greater than 0");
+
+        IERC20(_token).approve(msg.sender, _amount);
+        
+        return IERC20(_token).allowance(msg.sender, address(this));
+    }
+
+    /**
+    * @notice Function to check how much the contract has been approved to spend
+    * @param _token The address of the ERC20 token
+    * @param _owner The address of the token owner who approved the tokens
+    * @return The amount of tokens approved for the contract
+    */
     function checkAllowance(address _token, address _owner) external view returns (uint256) {
+        require(_token != address(0), "Invalid token address");
+        require(_owner != address(0), "Invalid owner address");
+
         return IERC20(_token).allowance(_owner, address(this));
     }
+
 
     /**
      * @notice Cancels an order and refunds the tokens to the requester.
      * @param _orderId ID of the order.
      */
-    function refundOrder(bytes32 _orderId) external override payable onlyAggregator whenNotPaused {
+    function refundOrder(bytes32 _orderId) external override onlyAggregator whenNotPaused {
         Order storage order = orders[_orderId];
         require(order.status == OrderStatus.Pending, "Order is not pending");
         require(order.orderType == OrderType.OffRamp, "Only OffRamp orders can be refunded");
@@ -170,28 +205,17 @@ contract OrderManagement is IOrderManagement, PausableUpgradeable, OwnableUpgrad
     function settleOrder(bytes32 _orderId) external override payable onlyAggregator whenNotPaused {
         Order storage order = orders[_orderId];
         require(order.status == OrderStatus.Pending, "Order is not pending");
-        
-        //if order is onramp we transfer tokens from this smartcontract to user
-        if (order.orderType == OrderType.OnRamp) {
-            require(IERC20(order.token).balanceOf(address(this))>= order.amount, "Insufficient funds");
+        require(order.orderType == OrderType.OffRamp, "Only OffRamp orders can be settled");
 
-            require (
-                IERC20(order.token).transferFrom(address(this), order.requester, order.amount ), 
-                "Token transfer failed"
-            );
-        } else {
-            //if order is offramp we transfer tokens from contract to the treasury
-            require(
-                IERC20(order.token).transfer(treasury, order.amount),
-                "Token transfer failed"
-            );
-        }
+        // Transfer tokens to the treasury for off-ramp orders
+        require(
+            IERC20(order.token).transfer(treasury, order.amount),
+            "Settlement transfer failed"
+        );
 
-        //Set the order status to completed
         order.status = OrderStatus.Completed;
         emit OrderSettled(_orderId);
     }
-
 
     /**
      * @notice Retrieves order details.
@@ -225,20 +249,7 @@ contract OrderManagement is IOrderManagement, PausableUpgradeable, OwnableUpgrad
             order.messageHash
         );
     }
-    /**
-     * @notice Helper function to approve tokens for testing in Remix
-     * @param _token The address of the ERC20 token
-     * @param _amount The amount to approve
-     */
-    function approveTokensForContract(address _token, uint256 _amount) external {
-        require(_token != address(0), "Invalid token address");
-        require(_amount > 0, "Amount must be greater than 0");
-        
-        // Call approve on the ERC20 token contract
-        bool success = IERC20(_token).approve(address(this), _amount);
-        require(success, "Token approval failed");
-    }
-  
+
     
     /**
      * @notice Returns the balance of the specified ERC20 token held by the contract.
