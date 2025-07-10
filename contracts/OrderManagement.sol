@@ -3,6 +3,8 @@ pragma solidity ^0.8.18;
 
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./interfaces/IOrderManagement.sol";
 
@@ -11,7 +13,13 @@ import "./interfaces/IOrderManagement.sol";
  * @dev A smart contract for managing on-ramp and off-ramp orders with token-based payments,
  * including escrow, refunds, and settlements.
  */
-contract OrderManagement is IOrderManagement, PausableUpgradeable, OwnableUpgradeable {
+contract OrderManagement is 
+    IOrderManagement, 
+    Initializable, 
+    PausableUpgradeable, 
+    OwnableUpgradeable, 
+    UUPSUpgradeable 
+{
     // Address with aggregator privileges for restricted functions
     address internal _aggregatorAddress;
 
@@ -53,18 +61,28 @@ contract OrderManagement is IOrderManagement, PausableUpgradeable, OwnableUpgrad
     event OrderRefunded(bytes32 indexed orderId);
     event EscrowReleased(bytes32 indexed orderId);
 
-    /**
-     * @notice Contract constructor to set the aggregator address.
-     * @param aggregator The address of the aggregator.
-     * @param _treasury The address of the treasury.
-     */
-    constructor(address aggregator, address _treasury) {
-        require(aggregator != address(0), "Invalid aggregator address");
-        require(_treasury != address(0), "Invalid treasury address");
-        _aggregatorAddress = aggregator;
-        treasury = _treasury;
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
     }
 
+    function initialize(
+        address aggregator, 
+        address _treasury, 
+        address _owner
+    ) public initializer {
+        require(aggregator != address(0), "Invalid aggregator address");
+        require(_treasury != address(0), "Invalid treasury address");
+        require(_owner != address(0), "Invalid owner address");
+        
+        __Pausable_init_unchained();
+        __Ownable_init_unchained(_owner);
+        __UUPSUpgradeable_init_unchained();
+        
+        _aggregatorAddress = aggregator;
+        treasury = _treasury;
+        // Remove _transferOwnership(_owner) since __Ownable_init_unchained sets the owner
+    }
     /**
      * @dev Restricts access to aggregator-only functions.
      */
@@ -72,6 +90,11 @@ contract OrderManagement is IOrderManagement, PausableUpgradeable, OwnableUpgrad
         require(msg.sender == _aggregatorAddress, "Caller is not the aggregator");
         _;
     }
+
+    /**
+     * @dev Authorize upgrade - only owner can upgrade
+     */
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
     /**
      * @notice Creates a new order.
@@ -128,8 +151,6 @@ contract OrderManagement is IOrderManagement, PausableUpgradeable, OwnableUpgrad
             orderType: _orderType,
             messageHash: messageHash
         });
-
-
 
         emit OrderCreated(orderId, _token, _userAddress, _amount, messageHash, 0, _orderType);
     }
@@ -191,7 +212,6 @@ contract OrderManagement is IOrderManagement, PausableUpgradeable, OwnableUpgrad
         emit OrderSettled(_orderId);
     }
 
-
     /**
      * @notice Retrieves order details.
      * @param _orderId ID of the order.
@@ -224,6 +244,7 @@ contract OrderManagement is IOrderManagement, PausableUpgradeable, OwnableUpgrad
             order.messageHash
         );
     }
+
     /**
      * @notice Helper function to approve tokens for testing in Remix
      * @param _token The address of the ERC20 token
@@ -237,7 +258,6 @@ contract OrderManagement is IOrderManagement, PausableUpgradeable, OwnableUpgrad
         bool success = IERC20(_token).approve(address(this), _amount);
         require(success, "Token approval failed");
     }
-  
     
     /**
      * @notice Returns the balance of the specified ERC20 token held by the contract.
@@ -317,5 +337,13 @@ contract OrderManagement is IOrderManagement, PausableUpgradeable, OwnableUpgrad
      */
     function unpause() external onlyOwner {
         _unpause();
+    }
+
+    /**
+     * @notice Get the current implementation version
+     * @return The version string
+     */
+    function getVersion() external pure returns (string memory) {
+        return "1.0.0";
     }
 }
