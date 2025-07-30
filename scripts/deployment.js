@@ -15,10 +15,10 @@ async function main() {
         throw new Error("Insufficient balance. Need at least 0.01 ETH for deployment.");
     }
     
-    // Configuration - Update these addresses!
+    // Configuration - use Safe multisig address for owner
     const aggregatorAddress = process.env.AGGREGATOR_ADDRESS || deployer.address;
     const treasuryAddress = process.env.TREASURY_ADDRESS || deployer.address;
-    const ownerAddress = deployer.address;
+    const ownerAddress = process.env.SAFE_ADDRESS || process.env.OWNER_ADDRESS || deployer.address;
     
     console.log("Configuration:");
     console.log("- Aggregator:", aggregatorAddress);

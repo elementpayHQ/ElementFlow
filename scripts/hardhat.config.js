@@ -38,6 +38,11 @@ module.exports = {
       url: process.env.BSC_URL || "",
       accounts: process.env.PRIVATE_KEY !== undefined ? [process.env.PRIVATE_KEY] : [],
     },
+    baseSepolia: {
+      url: "https://sepolia.base.org",
+      accounts: process.env.PRIVATE_KEY !== undefined ? [process.env.PRIVATE_KEY] : [],
+      chainId: 84532,
+    },
   },
   gasReporter: {
     enabled: process.env.REPORT_GAS !== undefined,

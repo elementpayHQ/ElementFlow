@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSL 1.1
-pragma solidity ^0.8.18;
+pragma solidity ^0.8.22;
 
-import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -313,6 +313,23 @@ contract OrderManagement is
     function updateTreasury(address _treasury) external onlyOwner {
         require(_treasury != address(0), "Invalid treasury address");
         treasury = _treasury;
+    }
+
+    /**
+     * @notice Updates the aggregator address (only owner).
+     * @param _aggregator The new aggregator address.
+     */
+    function updateAggregatorAddress(address _aggregator) external onlyOwner {
+        require(_aggregator != address(0), "Invalid aggregator address");
+        _aggregatorAddress = _aggregator;
+    }
+
+    /**
+     * @notice Gets the current aggregator address.
+     * @return The current aggregator address.
+     */
+    function aggregatorAddress() external view returns (address) {
+        return _aggregatorAddress;
     }
 
     /**
