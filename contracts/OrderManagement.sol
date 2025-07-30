@@ -318,4 +318,37 @@ contract OrderManagement is IOrderManagement, PausableUpgradeable, OwnableUpgrad
     function unpause() external onlyOwner {
         _unpause();
     }
+
+    /**
+     * @notice Updates the aggregator address.
+     * @param newAggregator The new aggregator address.
+     */
+    function updateAggregatorAddress(address newAggregator) external onlyOwner {
+        require(newAggregator != address(0), "Invalid aggregator address");
+        address oldAggregator = _aggregatorAddress;
+        _aggregatorAddress = newAggregator;
+        emit AggregatorAddressUpdated(oldAggregator, newAggregator);
+    }
+
+    /**
+     * @notice Returns the current aggregator address.
+     * @return The current aggregator address.
+     */
+    function getAggregatorAddress() external view returns (address) {
+        return _aggregatorAddress;
+    }
+
+    /**
+     * @notice Updates the treasury address.
+     * @param newTreasury The new treasury address.
+     */
+    function updateTreasuryAddress(address newTreasury) external onlyOwner {
+        require(newTreasury != address(0), "Invalid treasury address");
+        address oldTreasury = treasury;
+        treasury = newTreasury;
+        emit TreasuryAddressUpdated(oldTreasury, newTreasury);
+    }
+
+    event AggregatorAddressUpdated(address indexed oldAggregator, address indexed newAggregator);
+    event TreasuryAddressUpdated(address indexed oldTreasury, address indexed newTreasury);
 }
