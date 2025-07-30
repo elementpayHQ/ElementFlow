@@ -1,4 +1,4 @@
-const { ethers, upgrades } = require("hardhat");
+const { ethers, upgrades, run } = require("hardhat");
 
 async function main() {
     console.log("Starting deployment on Base Sepolia...");
@@ -8,12 +8,12 @@ async function main() {
     console.log("Deploying with account:", deployer.address);
     
     // Check balance
-    const balance = await deployer.getBalance();
-    console.log("Account balance:", ethers.utils.formatEther(balance), "ETH");
+    // const balance = await deployer.getBalance();
+    // console.log("Account balance:", ethers.utils.formatEther(balance), "ETH");
     
-    if (balance.lt(ethers.utils.parseEther("0.01"))) {
-        throw new Error("Insufficient balance. Need at least 0.01 ETH for deployment.");
-    }
+    // if (balance.lt(ethers.utils.parseEther("0.01"))) {
+    //     throw new Error("Insufficient balance. Need at least 0.01 ETH for deployment.");
+    // }
     
     // Configuration - Update these addresses!
     const aggregatorAddress = process.env.AGGREGATOR_ADDRESS || deployer.address;
@@ -40,10 +40,10 @@ async function main() {
         }
     );
     
-    await orderManagement.deployed();
+    await orderManagement.waitForDeployment();
     
     // Get addresses
-    const proxyAddress = orderManagement.address;
+    const proxyAddress = await orderManagement.getAddress();
     const implementationAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
     
     console.log("\n✅ Deployment successful!");
@@ -53,8 +53,35 @@ async function main() {
     
     // Verify the deployment
     console.log("\n🔍 Verifying deployment...");
-    const version = await orderManagement.getVersion();
-    console.log("   Contract version:", version);
+    try {
+        const version = await orderManagement.getVersion();
+        console.log("   Contract version:", version);
+    } catch (error) {
+        console.log("   Version check skipped - not available");
+    }
+    
+    // Verify contracts on BaseScan
+    console.log("\n🔍 Verifying contracts on BaseScan...");
+    try {
+        console.log("   Verifying implementation...");
+        await run("verify:verify", {
+            address: implementationAddress,
+            constructorArguments: [],
+        });
+        console.log("   ✅ Implementation verified!");
+        
+        console.log("   Verifying proxy...");
+        await run("verify:verify", {
+            address: proxyAddress,
+            constructorArguments: [],
+        });
+        console.log("   ✅ Proxy verified!");
+        
+    } catch (error) {
+        console.log("   ⚠️  Verification issue:", error.message);
+        console.log("   You can verify manually later using:");
+        console.log(`   npx hardhat verify --network base-sepolia ${implementationAddress}`);
+    }
     
     // Save deployment info
     const deploymentInfo = {
