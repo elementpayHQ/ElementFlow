@@ -1,0 +1,28 @@
+[Unit]
+Description=ElementPay USSD Service
+After=network.target
+Wants=network.target
+
+[Service]
+Type=exec
+User=root
+Group=root
+WorkingDirectory=/root
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONPATH=/root
+ExecStart=/usr/bin/python3 /root/ussd_service_fix.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=elementpay_ussd
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/root
+
+[Install]
+WantedBy=multi-user.target

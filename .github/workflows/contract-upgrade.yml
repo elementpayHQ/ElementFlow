@@ -1,0 +1,192 @@
+name: Contract Upgrade CI/CD
+
+on:
+  push:
+    branches:
+      - dev
+  pull_request:
+    branches:
+      - dev
+
+env:
+  NODE_VERSION: '18'
+  SOLIDITY_VERSION: '0.8.22'
+
+jobs:
+  # Job to compile and test contracts
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile contracts
+        run: npx hardhat compile
+
+      - name: Run tests
+        run: npx hardhat test
+        env:
+          REPORT_GAS: true
+
+      - name: Run linting
+        run: npx hardhat check
+
+  # Job to deploy and upgrade contracts on all testnets
+  deploy-testnets:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/dev' && github.event_name == 'push'
+    environment: testnet
+    strategy:
+      matrix:
+        network:
+          - base-sepolia
+          - arbitrum-sepolia
+          - scroll-sepolia
+          - lisk-sepolia
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile contracts
+        run: npx hardhat compile
+
+      - name: Deploy/Upgrade to ${{ matrix.network }}
+        id: deploy-testnet
+        run: |
+          npx hardhat run scripts/deploy.js --network ${{ matrix.network }}
+        env:
+          PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+          BASE_SEPOLIA_RPC: ${{ secrets.BASE_SEPOLIA_RPC }}
+          BASE_MAINNET_RPC: ${{ secrets.BASE_MAINNET_RPC }}
+          ARBITRUM_SEPOLIA_RPC: ${{ secrets.ARBITRUM_SEPOLIA_RPC }}
+          ARBITRUM_MAINNET_RPC: ${{ secrets.ARBITRUM_MAINNET_RPC }}
+          SCROLL_SEPOLIA_RPC: ${{ secrets.SCROLL_SEPOLIA_RPC }}
+          SCROLL_MAINNET_RPC: ${{ secrets.SCROLL_MAINNET_RPC }}
+          LISK_SEPOLIA_RPC: ${{ secrets.LISK_SEPOLIA_RPC }}
+          LISK_MAINNET_RPC: ${{ secrets.LISK_MAINNET_RPC }}
+          BASESCAN_API_KEY: ${{ secrets.BASESCAN_API_KEY }}
+          ARBISCAN_API_KEY: ${{ secrets.ARBISCAN_API_KEY }}
+          SCROLLSCAN_API_KEY: ${{ secrets.SCROLLSCAN_API_KEY }}
+          LISKSCAN_API_KEY: ${{ secrets.LISKSCAN_API_KEY }}
+
+      - name: Verify contracts on ${{ matrix.network }}
+        run: |
+          npx hardhat run scripts/verify.js --network ${{ matrix.network }}
+        env:
+          BASESCAN_API_KEY: ${{ secrets.BASESCAN_API_KEY }}
+          ARBISCAN_API_KEY: ${{ secrets.ARBISCAN_API_KEY }}
+          SCROLLSCAN_API_KEY: ${{ secrets.SCROLLSCAN_API_KEY }}
+          LISKSCAN_API_KEY: ${{ secrets.LISKSCAN_API_KEY }}
+        if: success()
+
+  # Job to deploy and upgrade contracts on all mainnets
+  deploy-mainnets:
+    needs: [test, deploy-testnets]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/dev' && github.event_name == 'push'
+    environment: mainnet
+    strategy:
+      matrix:
+        network:
+          - base
+          - arbitrum
+          - scroll
+          - lisk
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile contracts
+        run: npx hardhat compile
+
+      - name: Deploy/Upgrade to ${{ matrix.network }}
+        id: deploy-mainnet
+        run: |
+          npx hardhat run scripts/deploy.js --network ${{ matrix.network }}
+        env:
+          PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+          BASE_SEPOLIA_RPC: ${{ secrets.BASE_SEPOLIA_RPC }}
+          BASE_MAINNET_RPC: ${{ secrets.BASE_MAINNET_RPC }}
+          ARBITRUM_SEPOLIA_RPC: ${{ secrets.ARBITRUM_SEPOLIA_RPC }}
+          ARBITRUM_MAINNET_RPC: ${{ secrets.ARBITRUM_MAINNET_RPC }}
+          SCROLL_SEPOLIA_RPC: ${{ secrets.SCROLL_SEPOLIA_RPC }}
+          SCROLL_MAINNET_RPC: ${{ secrets.SCROLL_MAINNET_RPC }}
+          LISK_SEPOLIA_RPC: ${{ secrets.LISK_SEPOLIA_RPC }}
+          LISK_MAINNET_RPC: ${{ secrets.LISK_MAINNET_RPC }}
+          BASESCAN_API_KEY: ${{ secrets.BASESCAN_API_KEY }}
+          ARBISCAN_API_KEY: ${{ secrets.ARBISCAN_API_KEY }}
+          SCROLLSCAN_API_KEY: ${{ secrets.SCROLLSCAN_API_KEY }}
+          LISKSCAN_API_KEY: ${{ secrets.LISKSCAN_API_KEY }}
+
+      - name: Verify contracts on ${{ matrix.network }}
+        run: |
+          npx hardhat run scripts/verify.js --network ${{ matrix.network }}
+        env:
+          BASESCAN_API_KEY: ${{ secrets.BASESCAN_API_KEY }}
+          ARBISCAN_API_KEY: ${{ secrets.ARBISCAN_API_KEY }}
+          SCROLLSCAN_API_KEY: ${{ secrets.SCROLLSCAN_API_KEY }}
+          LISKSCAN_API_KEY: ${{ secrets.LISKSCAN_API_KEY }}
+        if: success()
+
+  # Job to create deployment summary
+  deployment-summary:
+    needs: [deploy-testnets, deploy-mainnets]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/dev' && github.event_name == 'push'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create deployment summary
+        run: |
+          echo "## 🚀 Contract Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Testnet Deployment Status" >> $GITHUB_STEP_SUMMARY
+          echo "- **Base Sepolia**: ${{ needs.deploy-testnets.result == 'success' && '✅ Success' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Arbitrum Sepolia**: ${{ needs.deploy-testnets.result == 'success' && '✅ Success' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Scroll Sepolia**: ${{ needs.deploy-testnets.result == 'success' && '✅ Success' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Lisk Sepolia**: ${{ needs.deploy-testnets.result == 'success' && '✅ Success' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Mainnet Deployment Status" >> $GITHUB_STEP_SUMMARY
+          echo "- **Base**: ${{ needs.deploy-mainnets.result == 'success' && '✅ Success' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Arbitrum**: ${{ needs.deploy-mainnets.result == 'success' && '✅ Success' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Scroll**: ${{ needs.deploy-mainnets.result == 'success' && '✅ Success' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Lisk**: ${{ needs.deploy-mainnets.result == 'success' && '✅ Success' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Explorer Links" >> $GITHUB_STEP_SUMMARY
+          echo "- **Base Sepolia**: https://sepolia.basescan.org/address/[CONTRACT_ADDRESS]" >> $GITHUB_STEP_SUMMARY
+          echo "- **Base Mainnet**: https://basescan.org/address/[CONTRACT_ADDRESS]" >> $GITHUB_STEP_SUMMARY
+          echo "- **Arbitrum Sepolia**: https://sepolia.arbiscan.io/address/[CONTRACT_ADDRESS]" >> $GITHUB_STEP_SUMMARY
+          echo "- **Arbitrum Mainnet**: https://arbiscan.io/address/[CONTRACT_ADDRESS]" >> $GITHUB_STEP_SUMMARY
+          echo "- **Scroll Sepolia**: https://sepolia.scrollscan.com/address/[CONTRACT_ADDRESS]" >> $GITHUB_STEP_SUMMARY
+          echo "- **Scroll Mainnet**: https://scrollscan.com/address/[CONTRACT_ADDRESS]" >> $GITHUB_STEP_SUMMARY
+          echo "- **Lisk Sepolia**: https://sepolia-explorer.lisk.com/address/[CONTRACT_ADDRESS]" >> $GITHUB_STEP_SUMMARY
+          echo "- **Lisk Mainnet**: https://explorer.lisk.com/address/[CONTRACT_ADDRESS]" >> $GITHUB_STEP_SUMMARY 

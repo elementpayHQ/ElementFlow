@@ -66,11 +66,13 @@ module.exports = {
     //   accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
     //   chainId: 1135,
     // },
-    // "lisk-sepolia": {
-    //   url: process.env.LISK_SEPOLIA_RPC || "https://rpc.sepolia-api.lisk.com",
-    //   accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
-    //   chainId: 4202,
-    // },
+    "lisk-sepolia": {
+      url: process.env.LISK_SEPOLIA_RPC || "https://rpc.sepolia-api.lisk.com",
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+      chainId: 4202,
+      timeout: 300000, // 5 minutes timeout
+      gasPrice: 1000000, // 1 gwei (much lower)
+    },
   },
   // Etherscan verification
   etherscan: {

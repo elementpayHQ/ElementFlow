@@ -5,7 +5,10 @@ const path = require("path");
 async function main() {
   const [deployer] = await ethers.getSigners();
   console.log("Deploying contracts with the account:", deployer.address);
-  // console.log("Account balance:", (await deployer.getBalance()).toString());
+  
+  // Get balance before deployment
+  const balance = await deployer.getBalance();
+  console.log("💰 Account balance:", ethers.formatEther(balance), "ETH");
 
   // Get network info
   const network = await ethers.provider.getNetwork();
@@ -27,7 +30,7 @@ async function main() {
   }
 
   try {
-    // Deploy or upgrade OrderManagement contract
+    // Deploy or upgrade OrderManagement contract with optimized gas settings
     const OrderManagement = await ethers.getContractFactory("OrderManagement");
     
     let orderManagement;
@@ -36,14 +39,17 @@ async function main() {
       console.log("Upgrading existing OrderManagement contract...");
       orderManagement = await upgrades.upgradeProxy(
         deploymentInfo.orderManagement.address,
-        OrderManagement
+        OrderManagement,
+        {
+          gasLimit: 2000000, // Lower gas limit
+          gasPrice: ethers.parseUnits("15", "gwei"), // Lower gas price (15 gwei)
+        }
       );
       console.log("OrderManagement upgraded to:", orderManagement.address);
     } else {
       console.log("Deploying new OrderManagement contract...");
       
       // For initial deployment, we need to provide constructor parameters
-      // These should be set based on your requirements
       const aggregatorAddress = process.env.AGGREGATOR_ADDRESS || deployer.address;
       const treasuryAddress = process.env.TREASURY_ADDRESS || deployer.address;
       const ownerAddress = process.env.OWNER_ADDRESS || deployer.address;
@@ -54,7 +60,9 @@ async function main() {
         ownerAddress
       ], {
         initializer: "initialize",
-        kind: "uups"
+        kind: "uups",
+        gasLimit: 3000000, // Lower gas limit for deployment
+        gasPrice: ethers.parseUnits("15", "gwei"), // Lower gas price (15 gwei)
       });
       
       await orderManagement.deployed();
@@ -78,41 +86,32 @@ async function main() {
     fs.writeFileSync(deploymentFile, JSON.stringify(deploymentInfo, null, 2));
     console.log("Deployment info saved to:", deploymentFile);
 
-    // Verify the contract
-    console.log("Waiting for contract verification...");
-    await orderManagement.deployTransaction.wait(5); // Wait for 5 confirmations
-
-    // Set output for GitHub Actions
-    if (process.env.GITHUB_ACTIONS) {
-      console.log(`::set-output name=contract_address::${orderManagement.address}`);
-      console.log(`::set-output name=implementation_address::${implementationAddress}`);
-    }
+    // Get balance after deployment
+    const balanceAfter = await deployer.getBalance();
+    const gasUsed = balance.sub(balanceAfter);
+    console.log("💰 Gas used:", ethers.formatEther(gasUsed), "ETH");
+    console.log("💰 Remaining balance:", ethers.formatEther(balanceAfter), "ETH");
 
     console.log("✅ Deployment completed successfully!");
     console.log("Contract Address:", orderManagement.address);
     console.log("Implementation Address:", implementationAddress);
 
     // Log network-specific explorer links
-    if (network.chainId === 84532) { // Base Sepolia
-      console.log("Base Sepolia Explorer:", `https://sepolia.basescan.org/address/${orderManagement.address}`);
-    } else if (network.chainId === 8453) { // Base Mainnet
-      console.log("Base Mainnet Explorer:", `https://basescan.org/address/${orderManagement.address}`);
-    } else if (network.chainId === 421614) { // Arbitrum Sepolia
-      console.log("Arbitrum Sepolia Explorer:", `https://sepolia.arbiscan.io/address/${orderManagement.address}`);
-    } else if (network.chainId === 42161) { // Arbitrum Mainnet
-      console.log("Arbitrum Mainnet Explorer:", `https://arbiscan.io/address/${orderManagement.address}`);
-    } else if (network.chainId === 534351) { // Scroll Sepolia
-      console.log("Scroll Sepolia Explorer:", `https://sepolia.scrollscan.com/address/${orderManagement.address}`);
-    } else if (network.chainId === 534352) { // Scroll Mainnet
-      console.log("Scroll Mainnet Explorer:", `https://scrollscan.com/address/${orderManagement.address}`);
-    } else if (network.chainId === 4202) { // Lisk Sepolia
+    if (network.chainId === 4202) { // Lisk Sepolia
       console.log("Lisk Sepolia Explorer:", `https://sepolia-explorer.lisk.com/address/${orderManagement.address}`);
-    } else if (network.chainId === 1135) { // Lisk Mainnet
-      console.log("Lisk Mainnet Explorer:", `https://explorer.lisk.com/address/${orderManagement.address}`);
     }
 
   } catch (error) {
     console.error("❌ Deployment failed:", error);
+    
+    // If it's a gas error, provide helpful information
+    if (error.message.includes("insufficient funds")) {
+      console.log("\n💡 Gas optimization tips:");
+      console.log("1. Try getting more Lisk Sepolia ETH from: https://sepolia-faucet.lisk.com/");
+      console.log("2. Wait for lower gas prices on the network");
+      console.log("3. Consider deploying during off-peak hours");
+    }
+    
     process.exit(1);
   }
 }
@@ -123,3 +122,5 @@ main()
     console.error(error);
     process.exit(1);
   });
+
+

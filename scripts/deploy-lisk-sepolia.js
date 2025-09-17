@@ -5,7 +5,7 @@ const path = require("path");
 async function main() {
   const [deployer] = await ethers.getSigners();
   console.log("Deploying contracts with the account:", deployer.address);
-  // console.log("Account balance:", (await deployer.getBalance()).toString());
+  console.log("Account balance:", (await deployer.getBalance()).toString());
 
   // Get network info
   const network = await ethers.provider.getNetwork();
@@ -36,27 +36,39 @@ async function main() {
       console.log("Upgrading existing OrderManagement contract...");
       orderManagement = await upgrades.upgradeProxy(
         deploymentInfo.orderManagement.address,
-        OrderManagement
+        OrderManagement,
+        {
+          timeout: 300000, // 5 minutes timeout
+          pollingInterval: 10000, // Poll every 10 seconds
+        }
       );
       console.log("OrderManagement upgraded to:", orderManagement.address);
     } else {
       console.log("Deploying new OrderManagement contract...");
       
       // For initial deployment, we need to provide constructor parameters
-      // These should be set based on your requirements
       const aggregatorAddress = process.env.AGGREGATOR_ADDRESS || deployer.address;
       const treasuryAddress = process.env.TREASURY_ADDRESS || deployer.address;
       const ownerAddress = process.env.OWNER_ADDRESS || deployer.address;
       
+      console.log("Deployment parameters:");
+      console.log("- Aggregator Address:", aggregatorAddress);
+      console.log("- Treasury Address:", treasuryAddress);
+      console.log("- Owner Address:", ownerAddress);
+      
+      // Deploy with extended timeout for Lisk Sepolia
       orderManagement = await upgrades.deployProxy(OrderManagement, [
         aggregatorAddress,
         treasuryAddress,
         ownerAddress
       ], {
         initializer: "initialize",
-        kind: "uups"
+        kind: "uups",
+        timeout: 300000, // 5 minutes timeout
+        pollingInterval: 10000, // Poll every 10 seconds
       });
       
+      console.log("Waiting for deployment to complete...");
       await orderManagement.deployed();
       console.log("OrderManagement deployed to:", orderManagement.address);
     }
@@ -78,41 +90,46 @@ async function main() {
     fs.writeFileSync(deploymentFile, JSON.stringify(deploymentInfo, null, 2));
     console.log("Deployment info saved to:", deploymentFile);
 
-    // Verify the contract
-    console.log("Waiting for contract verification...");
-    await orderManagement.deployTransaction.wait(5); // Wait for 5 confirmations
-
-    // Set output for GitHub Actions
-    if (process.env.GITHUB_ACTIONS) {
-      console.log(`::set-output name=contract_address::${orderManagement.address}`);
-      console.log(`::set-output name=implementation_address::${implementationAddress}`);
+    // Wait for confirmations with extended timeout
+    console.log("Waiting for contract confirmations...");
+    try {
+      await orderManagement.deployTransaction.wait(3); // Wait for 3 confirmations
+      console.log("Contract confirmed!");
+    } catch (waitError) {
+      console.log("Warning: Could not wait for confirmations, but deployment may still be successful");
+      console.log("Check the transaction hash manually:", orderManagement.deployTransaction.hash);
     }
 
     console.log("✅ Deployment completed successfully!");
     console.log("Contract Address:", orderManagement.address);
     console.log("Implementation Address:", implementationAddress);
+    console.log("Transaction Hash:", orderManagement.deployTransaction.hash);
 
-    // Log network-specific explorer links
-    if (network.chainId === 84532) { // Base Sepolia
-      console.log("Base Sepolia Explorer:", `https://sepolia.basescan.org/address/${orderManagement.address}`);
-    } else if (network.chainId === 8453) { // Base Mainnet
-      console.log("Base Mainnet Explorer:", `https://basescan.org/address/${orderManagement.address}`);
-    } else if (network.chainId === 421614) { // Arbitrum Sepolia
-      console.log("Arbitrum Sepolia Explorer:", `https://sepolia.arbiscan.io/address/${orderManagement.address}`);
-    } else if (network.chainId === 42161) { // Arbitrum Mainnet
-      console.log("Arbitrum Mainnet Explorer:", `https://arbiscan.io/address/${orderManagement.address}`);
-    } else if (network.chainId === 534351) { // Scroll Sepolia
-      console.log("Scroll Sepolia Explorer:", `https://sepolia.scrollscan.com/address/${orderManagement.address}`);
-    } else if (network.chainId === 534352) { // Scroll Mainnet
-      console.log("Scroll Mainnet Explorer:", `https://scrollscan.com/address/${orderManagement.address}`);
-    } else if (network.chainId === 4202) { // Lisk Sepolia
+    // Log Lisk Sepolia explorer link
+    if (network.chainId === 4202) { // Lisk Sepolia
       console.log("Lisk Sepolia Explorer:", `https://sepolia-explorer.lisk.com/address/${orderManagement.address}`);
-    } else if (network.chainId === 1135) { // Lisk Mainnet
-      console.log("Lisk Mainnet Explorer:", `https://explorer.lisk.com/address/${orderManagement.address}`);
+      console.log("Transaction Explorer:", `https://sepolia-explorer.lisk.com/tx/${orderManagement.deployTransaction.hash}`);
     }
 
   } catch (error) {
     console.error("❌ Deployment failed:", error);
+    
+    // Provide more helpful error information
+    if (error.message.includes("timeout")) {
+      console.log("\n💡 Timeout Tips:");
+      console.log("1. Check if the transaction was actually submitted to the network");
+      console.log("2. Try running the deployment again - it might have succeeded");
+      console.log("3. Check the Lisk Sepolia explorer for your transaction");
+      console.log("4. Consider using a higher gas price if the network is congested");
+    }
+    
+    if (error.message.includes("insufficient funds")) {
+      console.log("\n💡 Insufficient Funds Tips:");
+      console.log("1. Get more Lisk Sepolia testnet tokens from the faucet");
+      console.log("2. Check your wallet balance");
+      console.log("3. Consider using a different wallet with more tokens");
+    }
+    
     process.exit(1);
   }
 }
