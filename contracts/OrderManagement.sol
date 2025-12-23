@@ -5,362 +5,393 @@ import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/utils/math/Math.sol";
 import "./interfaces/IOrderManagement.sol";
+import "./OrderManagerSetting.sol";
 
-/**
- * @title OrderManagement
- * @dev A smart contract for managing on-ramp and off-ramp orders with token-based payments,
- * including escrow, refunds, and settlements.
- */
-contract OrderManagement is 
-    IOrderManagement, 
-    Initializable, 
-    PausableUpgradeable, 
-    OwnableUpgradeable, 
-    UUPSUpgradeable 
+contract OrderManagement is
+    IOrderManagement,
+    Initializable,
+    PausableUpgradeable,
+    OwnableUpgradeable,
+    UUPSUpgradeable,
+    ReentrancyGuardUpgradeable
 {
-    // Address with aggregator privileges for restricted functions
+    using SafeERC20 for IERC20;
+    
+    // --- State Variables ---
     address internal _aggregatorAddress;
-
-    // Treasury address that will store the funds
     address public treasury;
+    SettingsManager public settingsManager;
+    uint256 internal constant MAX_BPS = 10_000;
+    uint256 internal constant DEFAULT_MAX_FEE_BPS = 1_000;
+    mapping(address => uint256) private userNonces;
 
-    // Basis points denominator (used for fee calculations)
-    uint256 internal constant MAX_BPS = 100_000;
-
-    /// Enum representing the current status of an order
-    enum OrderStatus { Pending, Completed, Cancelled }
-
-    /// Struct for storing detailed order data
+    // --- Order Struct (Optimized) ---
     struct Order {
-        bytes32 orderId;       // Unique identifier for the order
-        address requester;     // Address of the order creator
-        address provider;      // Address of the escrow provider
-        address token;         // ERC20 token used for the transaction
-        uint256 amount;        // Token amount involved in the order
-        OrderStatus status;    // Current status of the order
-        OrderType orderType;   // Type of the order (on-ramp/off-ramp)
-        string messageHash;    // Additional order metadata stored as a hash
+        bytes32 orderId;
+        address requester;
+        address provider;
+        address token;
+        uint256 amount;
+        uint256 grossAmount;
+        OrderStatus status;
+        OrderType orderType;
+        string messageHash;
+        uint256 protocolFeeBPS;
+        address protocolFeeWallet;
+        uint256 providerFeeBPS;
+        address providerWallet;
+        uint256[50] __gap;
     }
 
-    // Mapping of order IDs to Order structs
     mapping(bytes32 => Order) public orders;
 
-    // Events for tracking key lifecycle actions
-    event OrderCreated(
-        bytes32 indexed orderId,
-        address indexed token,
-        address indexed requester,
-        uint256 amount,
-        string messageHash,
-        uint256 rate,
-        OrderType orderType
-    );
-    event OrderSettled(bytes32 indexed orderId);
-    event OrderRefunded(bytes32 indexed orderId);
-    event EscrowReleased(bytes32 indexed orderId);
+    // --- Struct to bundle creation parameters ---
+    struct OrderParams {
+        address userAddress;
+        uint256 grossAmount;
+        address token;
+        OrderType orderType;
+        string messageHash;
+        uint256 protocolFeeBPS;
+        address protocolFeeWallet;
+        uint256 providerFeeBPS;
+        address providerWallet;
+        uint256 minNetAmount;
+    }
 
-    /// @custom:oz-upgrades-unsafe-allow constructor
+    // --- Initialization ---
     constructor() {
         _disableInitializers();
     }
 
     function initialize(
-        address aggregator, 
-        address _treasury, 
-        address _owner
+        address aggregator,
+        address _treasury,
+        address _owner,
+        address _settingsManager
     ) public initializer {
         require(aggregator != address(0), "Invalid aggregator address");
         require(_treasury != address(0), "Invalid treasury address");
         require(_owner != address(0), "Invalid owner address");
-        
+        require(_settingsManager != address(0), "Invalid settings manager");
+
         __Pausable_init_unchained();
         __Ownable_init_unchained(_owner);
         __UUPSUpgradeable_init_unchained();
-        
+        __ReentrancyGuard_init_unchained();
+
         _aggregatorAddress = aggregator;
         treasury = _treasury;
-        // Remove _transferOwnership(_owner) since __Ownable_init_unchained sets the owner
+        settingsManager = SettingsManager(_settingsManager);
     }
-    /**
-     * @dev Restricts access to aggregator-only functions.
-     */
+
     modifier onlyAggregator() {
         require(msg.sender == _aggregatorAddress, "Caller is not the aggregator");
         _;
     }
 
-    /**
-     * @dev Authorize upgrade - only owner can upgrade
-     */
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
-    /**
-     * @notice Creates a new order.
-     * @param _userAddress Address of the requester creating the order.
-     * @param _amount Token amount involved in the order.
-     * @param _token Address of the ERC20 token used.
-     * @param _orderType Type of the order (on-ramp/off-ramp).
-     * @param messageHash Additional order metadata.
-     * @return orderId Unique ID of the newly created order.
-     */
+    // --- Core Functions (Optimized to avoid stack too deep) ---
     function createOrder(
         address _userAddress,
-        uint256 _amount,
+        uint256 _grossAmount,
         address _token,
         OrderType _orderType,
-        string calldata messageHash
-    ) external override whenNotPaused returns (bytes32 orderId) {
-        require(_userAddress != address(0), "Invalid requester address");
-        require(_token != address(0), "Invalid token address");
-        require(_orderType == OrderType.OnRamp || _orderType == OrderType.OffRamp, "Invalid order type");
-        require(_amount > 0, "Amount must be greater than 0");
-        require(bytes(messageHash).length != 0, "Invalid message hash");
-
-        // Check balances based on order type
-        if (_orderType == OrderType.OffRamp) {
-            require(IERC20(_token).balanceOf(_userAddress) >= _amount, "Insufficient balance");
-
-            //if allowed transfer tokens from user to contract
-            require(
-                IERC20(_token).transferFrom(_userAddress, address(this), _amount),
-                "Token transfer failed"
-            );
-        } else if (_orderType == OrderType.OnRamp) {
-            //ensure we have enough funds in this smartcontract
-            require(IERC20(_token).balanceOf(address(this)) >= _amount, "Insufficient funds");
-        }
-        // Check balances based on order type
-        else {
-            require(IERC20(_token).balanceOf(treasury) >= _amount, "Insufficient treasury balance");
-        }
-
-        // Generate order ID
-        orderId = keccak256(abi.encodePacked(block.timestamp, _userAddress, _amount, _token));
-        require(orders[orderId].requester == address(0), "Order already exists");
-
-        // Create the order
-        orders[orderId] = Order({
-            orderId: orderId,
-            requester: _userAddress,
-            provider: address(0),
+        string calldata messageHash,
+        uint256 _protocolFeeBPS,
+        address _protocolFeeWallet,
+        uint256 _providerFeeBPS,
+        address _providerWallet,
+        uint256 _minNetAmount
+    ) external override whenNotPaused nonReentrant returns (bytes32 orderId) {
+        OrderParams memory params = OrderParams({
+            userAddress: _userAddress,
+            grossAmount: _grossAmount,
             token: _token,
-            amount: _amount,
-            status: OrderStatus.Pending,
             orderType: _orderType,
-            messageHash: messageHash
+            messageHash: messageHash,
+            protocolFeeBPS: _protocolFeeBPS,
+            protocolFeeWallet: _protocolFeeWallet,
+            providerFeeBPS: _providerFeeBPS,
+            providerWallet: _providerWallet,
+            minNetAmount: _minNetAmount
         });
-
-        emit OrderCreated(orderId, _token, _userAddress, _amount, messageHash, 0, _orderType);
-    }
-
-    /**
-     * @notice Helper function to check current token allowance
-     * @param _token The token address
-     * @param _owner The owner of the tokens
-     * @return The current allowance for this contract
-     */
-    function checkAllowance(address _token, address _owner) external view returns (uint256) {
-        return IERC20(_token).allowance(_owner, address(this));
-    }
-
-    /**
-     * @notice Cancels an order and refunds the tokens to the requester.
-     * @param _orderId ID of the order.
-     */
-    function refundOrder(bytes32 _orderId) external override onlyAggregator whenNotPaused {
-        Order storage order = orders[_orderId];
-        require(order.status == OrderStatus.Pending, "Order is not pending");
-        require(order.orderType == OrderType.OffRamp, "Only OffRamp orders can be refunded");
-
-        // Refund the tokens to the requester
-        require(
-            IERC20(order.token).transfer(order.requester, order.amount),
-            "Refund transfer failed"
-        );
-
-        order.status = OrderStatus.Cancelled;
-        emit OrderRefunded(_orderId);
-    }
-
-    /**
-     * @notice Settles an order and transfers tokens to the treasury.
-     * @param _orderId ID of the order.
-     */
-    function settleOrder(bytes32 _orderId) external override payable onlyAggregator whenNotPaused {
-        Order storage order = orders[_orderId];
-        require(order.status == OrderStatus.Pending, "Order is not pending");
         
-        //if order is onramp we transfer tokens from this smartcontract to user
-        if (order.orderType == OrderType.OnRamp) {
-            require(IERC20(order.token).balanceOf(address(this))>= order.amount, "Insufficient funds");
-            require(
-                IERC20(order.token).transfer(order.requester, order.amount), 
-                "Token transfer failed"
-                );
+        return _createOrder(params);
+    }
+
+    function _createOrder(OrderParams memory params) internal returns (bytes32 orderId) {
+        // Validations
+        require(params.userAddress != address(0), "Invalid requester address");
+        require(params.token != address(0), "Invalid token address");
+        require(params.orderType == OrderType.OnRamp || params.orderType == OrderType.OffRamp, "Invalid order type");
+        require(params.grossAmount > 0, "Amount must be > 0");
+        require(bytes(params.messageHash).length != 0, "Invalid message hash");
+        require(params.protocolFeeBPS <= DEFAULT_MAX_FEE_BPS, "Protocol fee exceeds max");
+        require(params.providerFeeBPS <= DEFAULT_MAX_FEE_BPS, "Provider fee exceeds max");
+        
+        // Set defaults
+        address protocolFeeWallet = params.protocolFeeWallet == address(0) ? address(0xDead) : params.protocolFeeWallet;
+        address providerWallet = params.providerWallet == address(0) ? address(0xDead) : params.providerWallet;
+        uint256 minNetAmount = params.minNetAmount == 0 ? params.grossAmount : params.minNetAmount;
+        
+        require(settingsManager.isTokenSupported(params.token), "Token not supported");
+
+        // Fee calculations (using inline math to avoid stack issues)
+        uint256 protocolFee = (params.grossAmount * params.protocolFeeBPS) / MAX_BPS;
+        uint256 providerFee = (params.grossAmount * params.providerFeeBPS) / MAX_BPS;
+        uint256 netAmount = params.grossAmount - protocolFee - providerFee;
+        
+        require(netAmount >= minNetAmount, "Slippage too high");
+        require(netAmount > 0, "Net amount must be > 0");
+
+        // Token transfers
+        if (params.orderType == OrderType.OffRamp) {
+            _handleOffRampTransfer(params.token, params.userAddress, params.grossAmount, protocolFee, protocolFeeWallet, providerFee, providerWallet);
         } else {
-            //if order is offramp we transfer tokens from contract to the treasury
             require(
-                IERC20(order.token).transfer(treasury, order.amount),
-                "Token transfer failed"
+                IERC20(params.token).balanceOf(address(this)) + IERC20(params.token).balanceOf(treasury) >= params.grossAmount,
+                "Insufficient funds"
             );
         }
 
-        //Set the order status to completed
-        order.status = OrderStatus.Completed;
-        emit OrderSettled(_orderId);
+        // Generate orderId
+        orderId = keccak256(
+            abi.encode(
+                block.prevrandao,
+                userNonces[params.userAddress]++,
+                params.userAddress,
+                params.grossAmount,
+                params.token
+            )
+        );
+        require(orders[orderId].requester == address(0), "Order exists");
+
+        // Store order
+        Order storage newOrder = orders[orderId];
+        newOrder.orderId = orderId;
+        newOrder.requester = params.userAddress;
+        newOrder.token = params.token;
+        newOrder.amount = netAmount;
+        newOrder.grossAmount = params.grossAmount;
+        newOrder.status = OrderStatus.Pending;
+        newOrder.orderType = params.orderType;
+        newOrder.messageHash = params.messageHash;
+        newOrder.protocolFeeBPS = params.protocolFeeBPS;
+        newOrder.protocolFeeWallet = protocolFeeWallet;
+        newOrder.providerFeeBPS = params.providerFeeBPS;
+        newOrder.providerWallet = providerWallet;
+
+        emit OrderCreated(orderId, params.token, params.userAddress, params.grossAmount, netAmount, params.messageHash, params.orderType);
+        emit FeesCalculated(orderId, params.grossAmount, protocolFee, providerFee, netAmount);
+        
+        return orderId;
     }
 
-    /**
-     * @notice Retrieves order details.
-     * @param _orderId ID of the order.
-     */
-    function getOrder(bytes32 _orderId)
-        external
-        view
-        returns (
-            bytes32 orderId,
-            address requester,
-            address provider,
-            address token,
-            uint256 amount,
-            OrderStatus status,
-            OrderType orderType,
-            string memory messageHash
-        )
-    {
-        Order memory order = orders[_orderId];
+    function _handleOffRampTransfer(
+        address token,
+        address userAddress,
+        uint256 grossAmount,
+        uint256 protocolFee,
+        address protocolFeeWallet,
+        uint256 providerFee,
+        address providerWallet
+    ) internal {
+        require(IERC20(token).balanceOf(userAddress) >= grossAmount, "Insufficient balance");
+        IERC20(token).safeTransferFrom(userAddress, address(this), grossAmount);
+
+        // Distribute fees (Off-Ramp)
+        if (protocolFee > 0 && protocolFeeWallet != address(0xDead)) {
+            IERC20(token).safeTransfer(protocolFeeWallet, protocolFee);
+        }
+        if (providerFee > 0 && providerWallet != address(0xDead)) {
+            IERC20(token).safeTransfer(providerWallet, providerFee);
+        }
+    }
+
+    function settleOrder(bytes32 _orderId) external override payable whenNotPaused nonReentrant {
+        Order storage order = orders[_orderId];
+        require(order.status == OrderStatus.Pending, "Order not pending");
+
+        address token = order.token;
+        IERC20 tokenContract = IERC20(token);
+
+        if (order.orderType == OrderType.OnRamp) {
+            _settleOnRampOrder(order, tokenContract);
+        } else {
+            _settleOffRampOrder(order, tokenContract);
+        }
+
+        order.status = OrderStatus.Completed;
+        emit OrderSettled(_orderId, order.amount);
+    }
+
+    function _settleOnRampOrder(Order storage order, IERC20 tokenContract) internal {
+        uint256 protocolFee = (order.grossAmount * order.protocolFeeBPS) / MAX_BPS;
+        uint256 providerFee = (order.grossAmount * order.providerFeeBPS) / MAX_BPS;
+        uint256 netAmount = order.grossAmount - protocolFee - providerFee;
+
+        require(tokenContract.balanceOf(address(this)) >= order.grossAmount, "Insufficient funds");
+        tokenContract.safeTransfer(order.requester, netAmount);
+
+        if (protocolFee > 0 && order.protocolFeeWallet != address(0xDead)) {
+            tokenContract.safeTransfer(order.protocolFeeWallet, protocolFee);
+            emit FeesWithdrawn(order.protocolFeeWallet, order.token, protocolFee);
+        }
+        if (providerFee > 0 && order.providerWallet != address(0xDead)) {
+            tokenContract.safeTransfer(order.providerWallet, providerFee);
+            emit FeesWithdrawn(order.providerWallet, order.token, providerFee);
+        }
+    }
+
+    function _settleOffRampOrder(Order storage order, IERC20 tokenContract) internal {
+        require(tokenContract.balanceOf(address(this)) >= order.amount, "Insufficient funds");
+        tokenContract.safeTransfer(treasury, order.amount);
+    }
+
+    function refundOrder(bytes32 _orderId) external override onlyAggregator whenNotPaused nonReentrant {
+        Order storage order = orders[_orderId];
+        require(order.status == OrderStatus.Pending, "Order not pending");
+        require(order.orderType == OrderType.OffRamp, "Only OffRamp can be refunded");
+
+        IERC20(order.token).safeTransfer(order.requester, order.amount);
+        order.status = OrderStatus.Cancelled;
+        emit OrderRefunded(_orderId, order.amount);
+    }
+
+    function escrowFunds(bytes32 _orderId, uint256 _amount) external override whenNotPaused nonReentrant {
+        Order storage order = orders[_orderId];
+        require(order.status == OrderStatus.Pending, "Order not pending");
+        require(order.amount >= _amount, "Escrow amount exceeds order amount");
+
+        order.provider = msg.sender;
+        emit EscrowReleased(_orderId);
+    }
+
+    function releaseEscrow(bytes32 _orderId) external override whenNotPaused nonReentrant {
+        Order storage order = orders[_orderId];
+        require(order.provider == msg.sender, "Not escrow provider");
+        require(order.status == OrderStatus.Pending, "Order not pending");
+
+        order.status = OrderStatus.Completed;
+        emit EscrowReleased(_orderId);
+    }
+
+    // --- Optimized View Functions ---
+    function getOrderWithFees(bytes32 _orderId) external view returns (OrderWithFees memory) {
+        Order storage order = orders[_orderId];
         require(order.requester != address(0), "Order not found");
 
-        return (
-            order.orderId,
-            order.requester,
-            order.provider,
-            order.token,
-            order.amount,
-            order.status,
-            order.orderType,
-            order.messageHash
-        );
+        return OrderWithFees({
+            orderId: order.orderId,
+            requester: order.requester,
+            provider: order.provider,
+            token: order.token,
+            amount: order.amount,
+            grossAmount: order.grossAmount,
+            status: order.status,
+            orderType: order.orderType,
+            messageHash: order.messageHash,
+            protocolFeeBPS: order.protocolFeeBPS,
+            protocolFeeWallet: order.protocolFeeWallet,
+            providerFeeBPS: order.providerFeeBPS,
+            providerWallet: order.providerWallet
+        });
     }
 
-    /**
-     * @notice Helper function to approve tokens for testing in Remix
-     * @param _token The address of the ERC20 token
-     * @param _amount The amount to approve
-     */
-    function approveTokensForContract(address _token, uint256 _amount) external {
-        require(_token != address(0), "Invalid token address");
-        require(_amount > 0, "Amount must be greater than 0");
-        
-        // Call approve on the ERC20 token contract
-        bool success = IERC20(_token).approve(address(this), _amount);
-        require(success, "Token approval failed");
-    }
-    
-    /**
-     * @notice Returns the balance of the specified ERC20 token held by the contract.
-     * @param token The address of the ERC20 token.
-     * @return The token balance of the contract.
-     */
-    function getContractBalance(address token) external view returns (uint256) {
-        require(token != address(0), "Invalid token address");
-        return IERC20(token).balanceOf(address(this));
+    struct OrderWithFees {
+        bytes32 orderId;
+        address requester;
+        address provider;
+        address token;
+        uint256 amount;
+        uint256 grossAmount;
+        OrderStatus status;
+        OrderType orderType;
+        string messageHash;
+        uint256 protocolFeeBPS;
+        address protocolFeeWallet;
+        uint256 providerFeeBPS;
+        address providerWallet;
     }
 
-    /**
-     * @notice Returns the address of the contract.
-     * @return The contract address.
-     */
-    function getContractAddress() external view returns (address) {
-        return address(this);
-    }
-
-    /**
-     * @notice Escrows funds for an order.
-     * @param _orderId ID of the order.
-     * @param _amount Amount to be escrowed.
-     */
-    function escrowFunds(bytes32 _orderId, uint256 _amount) external override whenNotPaused {
+    function getOrder(bytes32 _orderId) external view override returns (
+        bytes32 orderId,
+        address requester,
+        address provider,
+        address token,
+        uint256 amount,
+        OrderStatus status,
+        OrderType orderType,
+        string memory messageHash
+    ) {
         Order storage order = orders[_orderId];
-        require(order.status == OrderStatus.Pending, "Order is not pending");
-        require(order.amount >= _amount, "Escrow amount exceeds order amount");
-        
-        order.provider = msg.sender;
+        require(order.requester != address(0), "Order not found");
 
-        emit EscrowReleased(_orderId);
+        orderId = order.orderId;
+        requester = order.requester;
+        provider = order.provider;
+        token = order.token;
+        amount = order.amount;
+        status = order.status;
+        orderType = order.orderType;
+        messageHash = order.messageHash;
     }
 
-    /**
-     * @notice Releases escrowed funds for an order.
-     * @param _orderId ID of the order.
-     */
-    function releaseEscrow(bytes32 _orderId) external override whenNotPaused {
-        Order storage order = orders[_orderId];
-        require(order.provider == msg.sender, "Caller is not the escrow provider");
-        require(order.status == OrderStatus.Pending, "Order is not pending");
-
-        order.status = OrderStatus.Completed;
-
-        emit EscrowReleased(_orderId);
-    }
-
-    /**
-     * @notice Updates the treasury address (only owner).
-     * @param _treasury The new treasury address.
-     */
+    // --- Admin Functions ---
     function updateTreasury(address _treasury) external onlyOwner {
         require(_treasury != address(0), "Invalid treasury address");
         treasury = _treasury;
     }
 
-    /**
-     * @notice Updates the aggregator address (only owner).
-     * @param _aggregator The new aggregator address.
-     */
     function updateAggregatorAddress(address _aggregator) external onlyOwner {
         require(_aggregator != address(0), "Invalid aggregator address");
         _aggregatorAddress = _aggregator;
     }
 
-    /**
-     * @notice Gets the current aggregator address.
-     * @return The current aggregator address.
-     */
-    function aggregatorAddress() external view returns (address) {
+    function aggregatorAddress() external view override returns (address) {
         return _aggregatorAddress;
     }
 
-    /**
-     * @notice Gets the treasury balance for a specific token.
-     * @param token The token address to check.
-     * @return The treasury's balance of the specified token.
-     */
-    function getTreasuryBalance(address token) external view returns (uint256) {
+    // --- Utility Functions ---
+    function getContractBalance(address token) external view override returns (uint256) {
+        require(token != address(0), "Invalid token address");
+        return IERC20(token).balanceOf(address(this));
+    }
+
+    function getTreasuryBalance(address token) external view override returns (uint256) {
         require(token != address(0), "Invalid token address");
         return IERC20(token).balanceOf(treasury);
     }
 
-    /**
-     * @notice Pauses the contract.
-     */
+    function checkAllowance(address _token, address _owner) external view override returns (uint256) {
+        return IERC20(_token).allowance(_owner, address(this));
+    }
+
+    function withdrawFees(address _token) external nonReentrant {
+        require(_token != address(0), "Invalid token address");
+        uint256 balance = IERC20(_token).balanceOf(address(this));
+        require(balance > 0, "No fees to withdraw");
+
+        IERC20(_token).safeTransfer(msg.sender, balance);
+        emit FeesWithdrawn(msg.sender, _token, balance);
+    }
+
     function pause() external onlyOwner {
         _pause();
     }
 
-    /**
-     * @notice Unpauses the contract.
-     */
     function unpause() external onlyOwner {
         _unpause();
     }
 
-    /**
-     * @notice Get the current implementation version
-     * @return The version string
-     */
     function getVersion() external pure returns (string memory) {
-        return "1.0.0";
+        return "2.0.0";
     }
 }
