@@ -1,366 +1,605 @@
 // SPDX-License-Identifier: BSL 1.1
-pragma solidity ^0.8.22;
+pragma solidity 0.8.22;
 
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import "./interfaces/IOrderManagement.sol";
+import "./interfaces/ISettingsManager.sol";
 
 /**
  * @title OrderManagement
- * @dev A smart contract for managing on-ramp and off-ramp orders with token-based payments,
- * including escrow, refunds, and settlements.
+ * @notice ElementFlow production on/off-ramp order manager.
+ *
+ * Security model:
+ *  - Owner (multisig + timelock): upgrades, token whitelist, role rotation, pause, unreserved withdrawal.
+ *  - OrderSigner (hot backend key): signs EIP-712 intents that lock all order economics.
+ *  - Aggregator (execution bot): drives the state machine only; cannot alter order params.
+ *  - User: creates OffRamp orders with a backend-signed intent; funds pulled at creation.
+ *
+ * Fee model:
+ *  escrowedAmount = principal + protocolFee + partnerFee
+ *  All fee wallets are snapshotted per-order at intent-signing time and are immutable after creation.
+ *
+ * Solvency:
+ *  reserved[token] tracks all tokens committed to pending orders.
+ *  Owner may only withdraw balanceOf(this) - reserved[token].
  */
-contract OrderManagement is 
-    IOrderManagement, 
-    Initializable, 
-    PausableUpgradeable, 
-    OwnableUpgradeable, 
-    UUPSUpgradeable 
+contract OrderManagement is
+    IOrderManagement,
+    Initializable,
+    PausableUpgradeable,
+    OwnableUpgradeable,
+    UUPSUpgradeable,
+    ReentrancyGuardUpgradeable
 {
-    // Address with aggregator privileges for restricted functions
-    address internal _aggregatorAddress;
+    using SafeERC20 for IERC20;
+    using ECDSA for bytes32;
 
-    // Treasury address that will store the funds
-    address public treasury;
+    // ─────────────────────────────────────────────────────────────
+    // Constants
+    // ─────────────────────────────────────────────────────────────
 
-    // Basis points denominator (used for fee calculations)
     uint256 internal constant MAX_BPS = 100_000;
 
-    /// Enum representing the current status of an order
-    enum OrderStatus { Pending, Completed, Cancelled }
-
-    /// Struct for storing detailed order data
-    struct Order {
-        bytes32 orderId;       // Unique identifier for the order
-        address requester;     // Address of the order creator
-        address provider;      // Address of the escrow provider
-        address token;         // ERC20 token used for the transaction
-        uint256 amount;        // Token amount involved in the order
-        OrderStatus status;    // Current status of the order
-        OrderType orderType;   // Type of the order (on-ramp/off-ramp)
-        string messageHash;    // Additional order metadata stored as a hash
-    }
-
-    // Mapping of order IDs to Order structs
-    mapping(bytes32 => Order) public orders;
-
-    // Events for tracking key lifecycle actions
-    event OrderCreated(
-        bytes32 indexed orderId,
-        address indexed token,
-        address indexed requester,
-        uint256 amount,
-        string messageHash,
-        uint256 rate,
-        OrderType orderType
+    bytes32 internal constant DOMAIN_TYPEHASH = keccak256(
+        "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
     );
-    event OrderSettled(bytes32 indexed orderId);
-    event OrderRefunded(bytes32 indexed orderId);
-    event EscrowReleased(bytes32 indexed orderId);
+
+    bytes32 internal constant ORDER_INTENT_TYPEHASH = keccak256(
+        "OrderIntent("
+        "address requester,"
+        "address token,"
+        "uint8 orderType,"
+        "uint256 principalAmount,"
+        "uint256 protocolFeeBps,"
+        "uint256 partnerFeeBps,"
+        "address providerWallet,"
+        "address partnerFeeWallet,"
+        "address protocolFeeWallet,"
+        "bytes32 providerId,"
+        "uint256 nonce,"
+        "uint256 deadline"
+        ")"
+    );
+
+    // ─────────────────────────────────────────────────────────────
+    // Storage
+    // ─────────────────────────────────────────────────────────────
+
+    /// @notice EIP-712 domain separator (set once at initialise, rebuilt on chain fork if needed).
+    bytes32 private _domainSeparator;
+
+    /// @notice Backend key that authorises order intent economics.
+    address internal _orderSigner;
+
+    /// @notice Execution bot that drives order lifecycle.
+    address internal _aggregatorAddress;
+
+    /// @notice Default treasury — used as protocolFeeWallet fallback in admin flows only.
+    address public treasury;
+
+    /// @notice Token whitelist oracle.
+    address public settingsManager;
+
+    /// @notice Per-requester monotonic nonce for replay protection.
+    mapping(address => uint256) public userNonce;
+
+    /// @notice Primary order store.
+    mapping(bytes32 => Order) private _orders;
+
+    /// @notice Tokens reserved for pending orders (OnRamp inventory + OffRamp escrow).
+    mapping(address => uint256) public reserved;
+
+    /// @dev Storage gap for future upgrades — preserves storage layout.
+    uint256[44] private __gap;
+
+    // ─────────────────────────────────────────────────────────────
+    // Constructor / Initializer
+    // ─────────────────────────────────────────────────────────────
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
     }
 
-    function initialize(
-        address aggregator, 
-        address _treasury, 
-        address _owner
-    ) public initializer {
-        require(aggregator != address(0), "Invalid aggregator address");
-        require(_treasury != address(0), "Invalid treasury address");
-        require(_owner != address(0), "Invalid owner address");
-        
-        __Pausable_init_unchained();
-        __Ownable_init_unchained(_owner);
-        __UUPSUpgradeable_init_unchained();
-        
-        _aggregatorAddress = aggregator;
-        treasury = _treasury;
-        // Remove _transferOwnership(_owner) since __Ownable_init_unchained sets the owner
-    }
     /**
-     * @dev Restricts access to aggregator-only functions.
+     * @notice Initialises the proxy. Must be called exactly once.
+     * @param aggregator_      Aggregator execution address.
+     * @param orderSigner_     EIP-712 signing key address.
+     * @param treasury_        Default protocol treasury.
+     * @param settingsManager_ Token whitelist contract.
+     * @param owner_           Initial owner (should be a multisig).
      */
+    function initialize(
+        address aggregator_,
+        address orderSigner_,
+        address treasury_,
+        address settingsManager_,
+        address owner_
+    ) external initializer {
+        if (aggregator_      == address(0)) revert ZeroAddress();
+        if (orderSigner_     == address(0)) revert ZeroAddress();
+        if (treasury_        == address(0)) revert ZeroAddress();
+        if (settingsManager_ == address(0)) revert ZeroAddress();
+        if (owner_           == address(0)) revert ZeroAddress();
+
+        __Pausable_init_unchained();
+        __Ownable_init_unchained(owner_);
+        __UUPSUpgradeable_init_unchained();
+        __ReentrancyGuard_init_unchained();
+
+        _aggregatorAddress = aggregator_;
+        _orderSigner       = orderSigner_;
+        treasury           = treasury_;
+        settingsManager    = settingsManager_;
+
+        _domainSeparator = _buildDomainSeparator();
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Access Modifiers
+    // ─────────────────────────────────────────────────────────────
+
     modifier onlyAggregator() {
         require(msg.sender == _aggregatorAddress, "Caller is not the aggregator");
         _;
     }
 
-    /**
-     * @dev Authorize upgrade - only owner can upgrade
-     */
-    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+    // ─────────────────────────────────────────────────────────────
+    // OffRamp Order Creation (called by user)
+    // ─────────────────────────────────────────────────────────────
 
     /**
-     * @notice Creates a new order.
-     * @param _userAddress Address of the requester creating the order.
-     * @param _amount Token amount involved in the order.
-     * @param _token Address of the ERC20 token used.
-     * @param _orderType Type of the order (on-ramp/off-ramp).
-     * @param messageHash Additional order metadata.
-     * @return orderId Unique ID of the newly created order.
+     * @inheritdoc IOrderManagement
      */
-    function createOrder(
-        address _userAddress,
-        uint256 _amount,
-        address _token,
-        OrderType _orderType,
-        string calldata messageHash
-    ) external override whenNotPaused returns (bytes32 orderId) {
-        require(_userAddress != address(0), "Invalid requester address");
-        require(_token != address(0), "Invalid token address");
-        require(_orderType == OrderType.OnRamp || _orderType == OrderType.OffRamp, "Invalid order type");
-        require(_amount > 0, "Amount must be greater than 0");
-        require(bytes(messageHash).length != 0, "Invalid message hash");
+    function createOffRampOrder(OrderIntent calldata intent, bytes calldata sig)
+        external
+        override
+        whenNotPaused
+        nonReentrant
+        returns (bytes32 orderId)
+    {
+        if (intent.orderType != OrderType.OffRamp) revert InvalidOrderType();
 
-        // Check balances based on order type
-        if (_orderType == OrderType.OffRamp) {
-            require(IERC20(_token).balanceOf(_userAddress) >= _amount, "Insufficient balance");
+        orderId = _verifyIntent(intent, sig);
+        _validateIntentFields(intent);
 
-            //if allowed transfer tokens from user to contract
-            require(
-                IERC20(_token).transferFrom(_userAddress, address(this), _amount),
-                "Token transfer failed"
-            );
-        } else if (_orderType == OrderType.OnRamp) {
-            //ensure we have enough funds in this smartcontract
-            require(IERC20(_token).balanceOf(address(this)) >= _amount, "Insufficient funds");
-        }
-        // Check balances based on order type
-        else {
-            require(IERC20(_token).balanceOf(treasury) >= _amount, "Insufficient treasury balance");
+        (uint256 protocolFee, uint256 partnerFee, uint256 escrowedAmount) =
+            _computeFees(intent.principalAmount, intent.protocolFeeBps, intent.partnerFeeBps);
+
+        // Pull tokens from user; reject fee-on-transfer tokens.
+        uint256 preBal  = IERC20(intent.token).balanceOf(address(this));
+        IERC20(intent.token).safeTransferFrom(intent.requester, address(this), escrowedAmount);
+        uint256 postBal = IERC20(intent.token).balanceOf(address(this));
+        if (postBal - preBal != escrowedAmount) {
+            revert FeeOnTransferTokenRejected(intent.token, escrowedAmount, postBal - preBal);
         }
 
-        // Generate order ID
-        orderId = keccak256(abi.encodePacked(block.timestamp, _userAddress, _amount, _token));
-        require(orders[orderId].requester == address(0), "Order already exists");
+        reserved[intent.token] += escrowedAmount;
 
-        // Create the order
-        orders[orderId] = Order({
-            orderId: orderId,
-            requester: _userAddress,
-            provider: address(0),
-            token: _token,
-            amount: _amount,
-            status: OrderStatus.Pending,
-            orderType: _orderType,
-            messageHash: messageHash
-        });
+        _storeOrder(orderId, intent, protocolFee, partnerFee, escrowedAmount);
 
-        emit OrderCreated(orderId, _token, _userAddress, _amount, messageHash, 0, _orderType);
-    }
-
-    /**
-     * @notice Helper function to check current token allowance
-     * @param _token The token address
-     * @param _owner The owner of the tokens
-     * @return The current allowance for this contract
-     */
-    function checkAllowance(address _token, address _owner) external view returns (uint256) {
-        return IERC20(_token).allowance(_owner, address(this));
-    }
-
-    /**
-     * @notice Cancels an order and refunds the tokens to the requester.
-     * @param _orderId ID of the order.
-     */
-    function refundOrder(bytes32 _orderId) external override onlyAggregator whenNotPaused {
-        Order storage order = orders[_orderId];
-        require(order.status == OrderStatus.Pending, "Order is not pending");
-        require(order.orderType == OrderType.OffRamp, "Only OffRamp orders can be refunded");
-
-        // Refund the tokens to the requester
-        require(
-            IERC20(order.token).transfer(order.requester, order.amount),
-            "Refund transfer failed"
+        emit OrderCreated(
+            orderId,
+            intent.token,
+            intent.requester,
+            OrderType.OffRamp,
+            escrowedAmount,
+            intent.principalAmount,
+            protocolFee,
+            partnerFee,
+            intent.providerId,
+            intent.deadline
         );
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // OnRamp Order Creation (called by aggregator)
+    // ─────────────────────────────────────────────────────────────
+
+    /**
+     * @inheritdoc IOrderManagement
+     */
+    function createOnRampOrder(OrderIntent calldata intent, bytes calldata sig)
+        external
+        override
+        whenNotPaused
+        onlyAggregator
+        nonReentrant
+        returns (bytes32 orderId)
+    {
+        if (intent.orderType != OrderType.OnRamp) revert InvalidOrderType();
+
+        orderId = _verifyIntent(intent, sig);
+        _validateIntentFields(intent);
+
+        (uint256 protocolFee, uint256 partnerFee, uint256 escrowedAmount) =
+            _computeFees(intent.principalAmount, intent.protocolFeeBps, intent.partnerFeeBps);
+
+        uint256 avail = IERC20(intent.token).balanceOf(address(this)) - reserved[intent.token];
+        if (avail < escrowedAmount) {
+            revert InsufficientInventory(intent.token, escrowedAmount, avail);
+        }
+        reserved[intent.token] += escrowedAmount;
+
+        _storeOrder(orderId, intent, protocolFee, partnerFee, escrowedAmount);
+
+        emit OrderCreated(
+            orderId,
+            intent.token,
+            intent.requester,
+            OrderType.OnRamp,
+            escrowedAmount,
+            intent.principalAmount,
+            protocolFee,
+            partnerFee,
+            intent.providerId,
+            intent.deadline
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Settlement
+    // ─────────────────────────────────────────────────────────────
+
+    /**
+     * @inheritdoc IOrderManagement
+     */
+    function settleOrder(bytes32 orderId)
+        external
+        override
+        onlyAggregator
+        whenNotPaused
+        nonReentrant
+    {
+        Order storage order = _orders[orderId];
+        _requirePending(orderId, order);
+        if (block.timestamp > order.deadline) revert OrderNotPending(orderId, order.status);
+
+        // CEI: mutate state before all external calls.
+        order.status = OrderStatus.Completed;
+        reserved[order.token] -= order.escrowedAmount;
+
+        IERC20 token = IERC20(order.token);
+
+        token.safeTransfer(order.providerWallet, order.principal);
+        token.safeTransfer(order.protocolFeeWallet, order.protocolFee);
+        if (order.partnerFee > 0) {
+            token.safeTransfer(order.partnerFeeWallet, order.partnerFee);
+        }
+
+        emit OrderSettled(
+            orderId,
+            order.providerWallet,
+            order.protocolFeeWallet,
+            order.partnerFeeWallet,
+            order.principal,
+            order.protocolFee,
+            order.partnerFee
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Refund (aggregator-initiated, OffRamp only)
+    // ─────────────────────────────────────────────────────────────
+
+    /**
+     * @inheritdoc IOrderManagement
+     */
+    function refundOrder(bytes32 orderId)
+        external
+        override
+        onlyAggregator
+        whenNotPaused
+        nonReentrant
+    {
+        Order storage order = _orders[orderId];
+        _requirePending(orderId, order);
+        if (order.orderType != OrderType.OffRamp) revert OrderNotOffRamp(orderId);
+
+        // CEI: state before external call.
+        order.status = OrderStatus.Cancelled;
+        reserved[order.token] -= order.escrowedAmount;
+
+        IERC20(order.token).safeTransfer(order.requester, order.escrowedAmount);
+
+        emit OrderRefunded(orderId, order.requester, order.escrowedAmount);
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // OnRamp Cancel (aggregator-initiated, no token movement)
+    // ─────────────────────────────────────────────────────────────
+
+    /**
+     * @inheritdoc IOrderManagement
+     */
+    function cancelOnRampOrder(bytes32 orderId)
+        external
+        override
+        onlyAggregator
+        whenNotPaused
+        nonReentrant
+    {
+        Order storage order = _orders[orderId];
+        _requirePending(orderId, order);
+        if (order.orderType != OrderType.OnRamp) revert OrderNotOnRamp(orderId);
+
+        // CEI: state before any side-effects.
+        order.status = OrderStatus.Cancelled;
+        reserved[order.token] -= order.escrowedAmount;
+
+        emit OnRampOrderCancelled(orderId);
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Trustless Expiry (callable by anyone after deadline)
+    // ─────────────────────────────────────────────────────────────
+
+    /**
+     * @inheritdoc IOrderManagement
+     */
+    function expireOrder(bytes32 orderId)
+        external
+        override
+        nonReentrant
+    {
+        Order storage order = _orders[orderId];
+        _requirePending(orderId, order);
+        if (block.timestamp <= order.deadline) {
+            revert OrderNotExpired(orderId, order.deadline, block.timestamp);
+        }
 
         order.status = OrderStatus.Cancelled;
-        emit OrderRefunded(_orderId);
-    }
+        reserved[order.token] -= order.escrowedAmount;
 
-    /**
-     * @notice Settles an order and transfers tokens to the treasury.
-     * @param _orderId ID of the order.
-     */
-    function settleOrder(bytes32 _orderId) external override payable onlyAggregator whenNotPaused {
-        Order storage order = orders[_orderId];
-        require(order.status == OrderStatus.Pending, "Order is not pending");
-        
-        //if order is onramp we transfer tokens from this smartcontract to user
-        if (order.orderType == OrderType.OnRamp) {
-            require(IERC20(order.token).balanceOf(address(this))>= order.amount, "Insufficient funds");
-            require(
-                IERC20(order.token).transfer(order.requester, order.amount), 
-                "Token transfer failed"
-                );
+        if (order.orderType == OrderType.OffRamp) {
+            IERC20(order.token).safeTransfer(order.requester, order.escrowedAmount);
+            emit OrderExpired(orderId, order.requester, order.escrowedAmount);
         } else {
-            //if order is offramp we transfer tokens from contract to the treasury
-            require(
-                IERC20(order.token).transfer(treasury, order.amount),
-                "Token transfer failed"
-            );
+            // OnRamp — inventory simply released; no tokens to transfer back.
+            emit OnRampOrderCancelled(orderId);
         }
-
-        //Set the order status to completed
-        order.status = OrderStatus.Completed;
-        emit OrderSettled(_orderId);
     }
 
-    /**
-     * @notice Retrieves order details.
-     * @param _orderId ID of the order.
-     */
-    function getOrder(bytes32 _orderId)
-        external
-        view
-        returns (
-            bytes32 orderId,
-            address requester,
-            address provider,
-            address token,
-            uint256 amount,
-            OrderStatus status,
-            OrderType orderType,
-            string memory messageHash
-        )
-    {
-        Order memory order = orders[_orderId];
-        require(order.requester != address(0), "Order not found");
+    // ─────────────────────────────────────────────────────────────
+    // View Functions
+    // ─────────────────────────────────────────────────────────────
 
-        return (
-            order.orderId,
-            order.requester,
-            order.provider,
-            order.token,
-            order.amount,
-            order.status,
-            order.orderType,
-            order.messageHash
-        );
+    /// @inheritdoc IOrderManagement
+    function getOrder(bytes32 orderId) external view override returns (Order memory) {
+        if (_orders[orderId].requester == address(0)) revert OrderNotFound(orderId);
+        return _orders[orderId];
     }
 
-    /**
-     * @notice Helper function to approve tokens for testing in Remix
-     * @param _token The address of the ERC20 token
-     * @param _amount The amount to approve
-     */
-    function approveTokensForContract(address _token, uint256 _amount) external {
-        require(_token != address(0), "Invalid token address");
-        require(_amount > 0, "Amount must be greater than 0");
-        
-        // Call approve on the ERC20 token contract
-        bool success = IERC20(_token).approve(address(this), _amount);
-        require(success, "Token approval failed");
-    }
-    
-    /**
-     * @notice Returns the balance of the specified ERC20 token held by the contract.
-     * @param token The address of the ERC20 token.
-     * @return The token balance of the contract.
-     */
-    function getContractBalance(address token) external view returns (uint256) {
-        require(token != address(0), "Invalid token address");
-        return IERC20(token).balanceOf(address(this));
+    /// @inheritdoc IOrderManagement
+    function availableBalance(address token) external view override returns (uint256) {
+        uint256 bal = IERC20(token).balanceOf(address(this));
+        uint256 res = reserved[token];
+        return bal > res ? bal - res : 0;
     }
 
-    /**
-     * @notice Returns the address of the contract.
-     * @return The contract address.
-     */
-    function getContractAddress() external view returns (address) {
-        return address(this);
+    /// @notice Returns the current domain separator (EIP-712).
+    function DOMAIN_SEPARATOR() external view returns (bytes32) {
+        return _domainSeparator;
     }
 
-    /**
-     * @notice Escrows funds for an order.
-     * @param _orderId ID of the order.
-     * @param _amount Amount to be escrowed.
-     */
-    function escrowFunds(bytes32 _orderId, uint256 _amount) external override whenNotPaused {
-        Order storage order = orders[_orderId];
-        require(order.status == OrderStatus.Pending, "Order is not pending");
-        require(order.amount >= _amount, "Escrow amount exceeds order amount");
-        
-        order.provider = msg.sender;
-
-        emit EscrowReleased(_orderId);
+    /// @notice Returns the current order signer address.
+    function orderSigner() external view returns (address) {
+        return _orderSigner;
     }
 
-    /**
-     * @notice Releases escrowed funds for an order.
-     * @param _orderId ID of the order.
-     */
-    function releaseEscrow(bytes32 _orderId) external override whenNotPaused {
-        Order storage order = orders[_orderId];
-        require(order.provider == msg.sender, "Caller is not the escrow provider");
-        require(order.status == OrderStatus.Pending, "Order is not pending");
-
-        order.status = OrderStatus.Completed;
-
-        emit EscrowReleased(_orderId);
-    }
-
-    /**
-     * @notice Updates the treasury address (only owner).
-     * @param _treasury The new treasury address.
-     */
-    function updateTreasury(address _treasury) external onlyOwner {
-        require(_treasury != address(0), "Invalid treasury address");
-        treasury = _treasury;
-    }
-
-    /**
-     * @notice Updates the aggregator address (only owner).
-     * @param _aggregator The new aggregator address.
-     */
-    function updateAggregatorAddress(address _aggregator) external onlyOwner {
-        require(_aggregator != address(0), "Invalid aggregator address");
-        _aggregatorAddress = _aggregator;
-    }
-
-    /**
-     * @notice Gets the current aggregator address.
-     * @return The current aggregator address.
-     */
+    /// @notice Returns the current aggregator address.
     function aggregatorAddress() external view returns (address) {
         return _aggregatorAddress;
     }
 
-    /**
-     * @notice Gets the treasury balance for a specific token.
-     * @param token The token address to check.
-     * @return The treasury's balance of the specified token.
-     */
-    function getTreasuryBalance(address token) external view returns (uint256) {
-        require(token != address(0), "Invalid token address");
-        return IERC20(token).balanceOf(treasury);
-    }
-
-    /**
-     * @notice Pauses the contract.
-     */
-    function pause() external onlyOwner {
-        _pause();
-    }
-
-    /**
-     * @notice Unpauses the contract.
-     */
-    function unpause() external onlyOwner {
-        _unpause();
-    }
-
-    /**
-     * @notice Get the current implementation version
-     * @return The version string
-     */
+    /// @notice Returns the contract version.
     function getVersion() external pure returns (string memory) {
-        return "1.0.0";
+        return "2.0.0";
     }
+
+    // ─────────────────────────────────────────────────────────────
+    // Admin — Safe Withdrawal
+    // ─────────────────────────────────────────────────────────────
+
+    /**
+     * @notice Withdraw tokens not committed to any pending order.
+     *         Cannot drain escrow or OnRamp inventory backing live orders.
+     * @param token  ERC-20 token to withdraw.
+     * @param to     Destination address.
+     * @param amount Amount to withdraw.
+     */
+    function withdrawUnreserved(address token, address to, uint256 amount)
+        external
+        onlyOwner
+        nonReentrant
+    {
+        if (to == address(0)) revert ZeroAddress();
+        uint256 bal  = IERC20(token).balanceOf(address(this));
+        uint256 res  = reserved[token];
+        uint256 avail = bal > res ? bal - res : 0;
+        if (amount > avail) revert WithdrawalExceedsUnreserved(amount, avail);
+
+        IERC20(token).safeTransfer(to, amount);
+        emit UnreservedWithdrawn(token, to, amount);
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Admin — Role Management
+    // ─────────────────────────────────────────────────────────────
+
+    /// @notice Updates the aggregator address. Only owner.
+    function updateAggregatorAddress(address aggregator_) external onlyOwner {
+        if (aggregator_ == address(0)) revert ZeroAddress();
+        emit AggregatorUpdated(_aggregatorAddress, aggregator_);
+        _aggregatorAddress = aggregator_;
+    }
+
+    /// @notice Updates the order signer address. Only owner.
+    function updateOrderSigner(address signer_) external onlyOwner {
+        if (signer_ == address(0)) revert ZeroAddress();
+        emit OrderSignerUpdated(_orderSigner, signer_);
+        _orderSigner = signer_;
+    }
+
+    /// @notice Updates the default treasury address. Only owner.
+    /// @dev Does NOT affect already-created orders; per-order protocolFeeWallet is immutable.
+    function updateTreasury(address treasury_) external onlyOwner {
+        if (treasury_ == address(0)) revert ZeroAddress();
+        emit TreasuryUpdated(treasury, treasury_);
+        treasury = treasury_;
+    }
+
+    /// @notice Updates the settings manager (token whitelist) address. Only owner.
+    function updateSettingsManager(address settingsManager_) external onlyOwner {
+        if (settingsManager_ == address(0)) revert ZeroAddress();
+        settingsManager = settingsManager_;
+    }
+
+    /// @notice Pauses the contract. Only owner.
+    function pause() external onlyOwner { _pause(); }
+
+    /// @notice Unpauses the contract. Only owner.
+    function unpause() external onlyOwner { _unpause(); }
+
+    // ─────────────────────────────────────────────────────────────
+    // Internal Helpers
+    // ─────────────────────────────────────────────────────────────
+
+    /**
+     * @dev Verifies the EIP-712 signature, increments the requester's nonce, and returns
+     *      the EIP-712 typed data hash (used directly as the orderId to avoid recomputation).
+     */
+    function _verifyIntent(OrderIntent calldata intent, bytes calldata sig)
+        internal
+        returns (bytes32 digest)
+    {
+        if (block.timestamp > intent.deadline) {
+            revert ExpiredIntent(intent.deadline, block.timestamp);
+        }
+        uint256 expected = userNonce[intent.requester];
+        if (intent.nonce != expected) {
+            revert InvalidNonce(expected, intent.nonce);
+        }
+
+        bytes32 structHash = keccak256(abi.encode(
+            ORDER_INTENT_TYPEHASH,
+            intent.requester,
+            intent.token,
+            uint8(intent.orderType),
+            intent.principalAmount,
+            intent.protocolFeeBps,
+            intent.partnerFeeBps,
+            intent.providerWallet,
+            intent.partnerFeeWallet,
+            intent.protocolFeeWallet,
+            intent.providerId,
+            intent.nonce,
+            intent.deadline
+        ));
+
+        digest = MessageHashUtils.toTypedDataHash(_domainSeparator, structHash);
+        address recovered = ECDSA.recover(digest, sig);
+        if (recovered != _orderSigner) revert InvalidSignature();
+
+        // Increment nonce after successful verification.
+        userNonce[intent.requester] = expected + 1;
+    }
+
+    /**
+     * @dev Validates intent fields that are not covered by signature verification.
+     */
+    function _validateIntentFields(OrderIntent calldata intent) internal view {
+        if (intent.requester        == address(0)) revert ZeroAddress();
+        if (intent.token            == address(0)) revert ZeroAddress();
+        if (intent.providerWallet   == address(0)) revert ZeroAddress();
+        if (intent.protocolFeeWallet == address(0)) revert ZeroAddress();
+        if (intent.principalAmount  == 0)          revert ZeroAmount();
+
+        if (!ISettingsManager(settingsManager).isTokenSupported(intent.token)) {
+            revert TokenNotSupported(intent.token);
+        }
+    }
+
+    /**
+     * @dev Computes fee amounts from principal and basis points.
+     *      Reverts if total fees exceed principal (sanity guard against misconfigured intents).
+     */
+    function _computeFees(
+        uint256 principal,
+        uint256 protocolFeeBps,
+        uint256 partnerFeeBps
+    ) internal pure returns (
+        uint256 protocolFee,
+        uint256 partnerFee,
+        uint256 escrowedAmount
+    ) {
+        protocolFee = (principal * protocolFeeBps) / MAX_BPS;
+        partnerFee  = (principal * partnerFeeBps)  / MAX_BPS;
+        uint256 totalFees = protocolFee + partnerFee;
+        if (totalFees > principal) revert FeesExceedPrincipal(totalFees, principal);
+        escrowedAmount = principal + totalFees;
+    }
+
+    /**
+     * @dev Builds and stores the Order struct from a verified intent.
+     */
+    function _storeOrder(
+        bytes32 orderId,
+        OrderIntent calldata intent,
+        uint256 protocolFee,
+        uint256 partnerFee,
+        uint256 escrowedAmount
+    ) internal {
+        _orders[orderId] = Order({
+            requester:         intent.requester,
+            token:             intent.token,
+            orderType:         intent.orderType,
+            status:            OrderStatus.Pending,
+            providerWallet:    intent.providerWallet,
+            protocolFeeWallet: intent.protocolFeeWallet,
+            partnerFeeWallet:  intent.partnerFeeWallet,
+            principal:         intent.principalAmount,
+            protocolFee:       protocolFee,
+            partnerFee:        partnerFee,
+            escrowedAmount:    escrowedAmount,
+            deadline:          intent.deadline,
+            providerId:        intent.providerId
+        });
+    }
+
+    /**
+     * @dev Reverts if the order does not exist or is not Pending.
+     */
+    function _requirePending(bytes32 orderId, Order storage order) internal view {
+        if (order.requester == address(0)) revert OrderNotFound(orderId);
+        if (order.status != OrderStatus.Pending) revert OrderNotPending(orderId, order.status);
+    }
+
+    /**
+     * @dev Builds the EIP-712 domain separator.
+     */
+    function _buildDomainSeparator() internal view returns (bytes32) {
+        return keccak256(abi.encode(
+            DOMAIN_TYPEHASH,
+            keccak256(bytes("ElementFlow")),
+            keccak256(bytes("2")),
+            block.chainid,
+            address(this)
+        ));
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // UUPS
+    // ─────────────────────────────────────────────────────────────
+
+    /// @dev Only owner can authorise implementation upgrades.
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 }
