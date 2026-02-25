@@ -11,7 +11,6 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import "./interfaces/IOrderManagement.sol";
-import "./interfaces/ISettingsManager.sol";
 
 /**
  * @title OrderManagement
@@ -26,6 +25,9 @@ import "./interfaces/ISettingsManager.sol";
  * Fee model:
  *  escrowedAmount = principal + protocolFee + partnerFee
  *  All fee wallets are snapshotted per-order at intent-signing time and are immutable after creation.
+ *
+ * Token whitelist:
+ *  Owner manages supported tokens via setTokenSupport(). Only whitelisted tokens can be used in orders.
  *
  * Solvency:
  *  reserved[token] tracks all tokens committed to pending orders.
@@ -85,8 +87,8 @@ contract OrderManagement is
     /// @notice Default treasury — used as protocolFeeWallet fallback in admin flows only.
     address public treasury;
 
-    /// @notice Token whitelist oracle.
-    address public settingsManager;
+    /// @notice Token whitelist — managed directly by owner.
+    mapping(address => bool) private _supportedTokens;
 
     /// @notice Per-requester monotonic nonce for replay protection.
     mapping(address => uint256) public userNonce;
@@ -111,24 +113,21 @@ contract OrderManagement is
 
     /**
      * @notice Initialises the proxy. Must be called exactly once.
-     * @param aggregator_      Aggregator execution address.
-     * @param orderSigner_     EIP-712 signing key address.
-     * @param treasury_        Default protocol treasury.
-     * @param settingsManager_ Token whitelist contract.
-     * @param owner_           Initial owner (should be a multisig).
+     * @param aggregator_  Aggregator execution address.
+     * @param orderSigner_ EIP-712 signing key address.
+     * @param treasury_    Default protocol treasury.
+     * @param owner_       Initial owner (should be a multisig).
      */
     function initialize(
         address aggregator_,
         address orderSigner_,
         address treasury_,
-        address settingsManager_,
         address owner_
     ) external initializer {
-        if (aggregator_      == address(0)) revert ZeroAddress();
-        if (orderSigner_     == address(0)) revert ZeroAddress();
-        if (treasury_        == address(0)) revert ZeroAddress();
-        if (settingsManager_ == address(0)) revert ZeroAddress();
-        if (owner_           == address(0)) revert ZeroAddress();
+        if (aggregator_  == address(0)) revert ZeroAddress();
+        if (orderSigner_ == address(0)) revert ZeroAddress();
+        if (treasury_    == address(0)) revert ZeroAddress();
+        if (owner_       == address(0)) revert ZeroAddress();
 
         __Pausable_init_unchained();
         __Ownable_init_unchained(owner_);
@@ -138,7 +137,6 @@ contract OrderManagement is
         _aggregatorAddress = aggregator_;
         _orderSigner       = orderSigner_;
         treasury           = treasury_;
-        settingsManager    = settingsManager_;
 
         _domainSeparator = _buildDomainSeparator();
     }
@@ -457,10 +455,20 @@ contract OrderManagement is
         treasury = treasury_;
     }
 
-    /// @notice Updates the settings manager (token whitelist) address. Only owner.
-    function updateSettingsManager(address settingsManager_) external onlyOwner {
-        if (settingsManager_ == address(0)) revert ZeroAddress();
-        settingsManager = settingsManager_;
+    /**
+     * @notice Adds or removes a token from the whitelist. Only owner.
+     * @param token       ERC-20 token address.
+     * @param supported   True to whitelist, false to remove.
+     */
+    function setTokenSupport(address token, bool supported) external onlyOwner {
+        if (token == address(0)) revert ZeroAddress();
+        _supportedTokens[token] = supported;
+        emit TokenSupportUpdated(token, supported);
+    }
+
+    /// @notice Returns true if the token is whitelisted for use in orders.
+    function isTokenSupported(address token) external view returns (bool) {
+        return _supportedTokens[token];
     }
 
     /// @notice Pauses the contract. Only owner.
@@ -523,7 +531,7 @@ contract OrderManagement is
         if (intent.protocolFeeWallet == address(0)) revert ZeroAddress();
         if (intent.principalAmount  == 0)          revert ZeroAmount();
 
-        if (!ISettingsManager(settingsManager).isTokenSupported(intent.token)) {
+        if (!_supportedTokens[intent.token]) {
             revert TokenNotSupported(intent.token);
         }
     }

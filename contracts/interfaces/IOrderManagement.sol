@@ -184,6 +184,11 @@ interface IOrderManagement {
      */
     event TreasuryUpdated(address indexed previous, address indexed next);
 
+    /**
+     * @notice Emitted when a token's whitelist status changes.
+     */
+    event TokenSupportUpdated(address indexed token, bool supported);
+
     // ─────────────────────────────────────────────────────────────
     // Errors
     // ─────────────────────────────────────────────────────────────
@@ -283,4 +288,9 @@ interface IOrderManagement {
      * @notice Returns the amount available for new OnRamp orders or owner withdrawal.
      */
     function availableBalance(address token) external view returns (uint256);
+
+    /**
+     * @notice Returns true if the token is whitelisted for use in orders.
+     */
+    function isTokenSupported(address token) external view returns (bool);
 }
