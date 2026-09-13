@@ -85,6 +85,7 @@ async function main() {
     console.log("\nWiring...");
     await (await manager.setProviderRegistry(await registry.getAddress())).wait();
     await (await registry.registerProvider(TREASURY_PROVIDER_ID, await pool.getAddress())).wait();
+    await (await manager.setDefaultProviderId(TREASURY_PROVIDER_ID)).wait();
     for (const token of allowlist) {
       await (await manager.setTokenAllowed(token, true)).wait();
       await (await pool.setTokenSupported(token, true)).wait();
@@ -95,6 +96,7 @@ async function main() {
     console.log("\nAdmin is not the deployer — execute these from the admin account:");
     console.log(`  orderManager.setProviderRegistry(${await registry.getAddress()})`);
     console.log(`  registry.registerProvider(${TREASURY_PROVIDER_ID}, ${await pool.getAddress()})`);
+    console.log(`  orderManager.setDefaultProviderId(${TREASURY_PROVIDER_ID})`);
     for (const token of allowlist) {
       console.log(`  orderManager.setTokenAllowed(${token}, true)`);
       console.log(`  treasuryPool.setTokenSupported(${token}, true)`);

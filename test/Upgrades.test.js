@@ -202,6 +202,39 @@ describe("Upgrade safety", function () {
       expect(await ctx.v2.aggregatorAddress()).to.equal(ctx.aggregator.address);
     });
 
+    it("preserves an emergency pause across the v1 -> v2 migration", async function () {
+      const ctx = await deployV1Fixture();
+      const amount = usdc(500);
+      await createV1OffRampOrder(ctx, amount, "paused-upgrade");
+
+      await ctx.v1.connect(ctx.owner).pause();
+      expect(await ctx.v1.paused()).to.equal(true);
+
+      const V2 = await ethers.getContractFactory("ElementFlowOrderManager", ctx.owner);
+      const v2 = await upgrades.upgradeProxy(await ctx.v1.getAddress(), V2, {
+        kind: "uups",
+        call: {
+          fn: "initializeV2",
+          args: [
+            ctx.owner.address,
+            ctx.aggregator.address,
+            ctx.feeRecipient.address,
+            0,
+            3600,
+            [await ctx.token.getAddress()],
+            [amount],
+          ],
+        },
+      });
+
+      expect(await v2.paused()).to.equal(true);
+      await expect(
+        v2
+          .connect(ctx.aggregator)
+          .createOrder(ctx.user.address, usdc(100), await ctx.token.getAddress(), OrderType.OffRamp, "blocked")
+      ).to.be.revertedWithCustomError(v2, "EnforcedPause");
+    });
+
     it("closes the escrow-freezing vulnerability", async function () {
       const ctx = await loadFixture(upgradedFixture);
 

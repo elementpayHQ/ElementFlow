@@ -58,8 +58,12 @@ contract TreasuryPool is
 
     bytes32 private _providerId;
     mapping(address => bool) public isTokenSupported_;
+    /// @notice On-ramp float already committed to pending orders, per token.
+    /// @dev Subtracted from {availableLiquidity} so concurrent creations and `defund`
+    ///      cannot oversubscribe the same pool balance.
+    mapping(address => uint256) public reservedLiquidity;
 
-    uint256[47] private __gap;
+    uint256[46] private __gap;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -98,7 +102,9 @@ contract TreasuryPool is
 
     /// @inheritdoc IOnRampProvider
     function availableLiquidity(address token) public view override returns (uint256) {
-        return IERC20(token).balanceOf(address(this));
+        uint256 balance = IERC20(token).balanceOf(address(this));
+        uint256 reserved = reservedLiquidity[token];
+        return balance > reserved ? balance - reserved : 0;
     }
 
     /**
@@ -117,8 +123,12 @@ contract TreasuryPool is
         if (!isTokenSupported_[ctx.token]) revert TokenNotSupported(ctx.token);
 
         uint256 required = ctx.netAmount + ctx.feeAmount;
-        uint256 available = availableLiquidity(ctx.token);
-        if (available < required) revert InsufficientPoolLiquidity(ctx.token, required, available);
+        // Release the creation-time reservation, then require the tokens still be on hand.
+        // Using raw balance (not availableLiquidity) so the just-released funds are eligible
+        // to pay this order without being double-counted against other reservations.
+        reservedLiquidity[ctx.token] -= required;
+        uint256 balance = IERC20(ctx.token).balanceOf(address(this));
+        if (balance < required) revert InsufficientPoolLiquidity(ctx.token, required, balance);
 
         if (ctx.netAmount > 0) IERC20(ctx.token).safeTransfer(beneficiary, ctx.netAmount);
         if (ctx.feeAmount > 0) IERC20(ctx.token).safeTransfer(feeRecipient, ctx.feeAmount);
@@ -156,6 +166,7 @@ contract TreasuryPool is
             uint256 required = ctx.netAmount + ctx.feeAmount;
             uint256 available = availableLiquidity(ctx.token);
             if (available < required) revert InsufficientPoolLiquidity(ctx.token, required, available);
+            reservedLiquidity[ctx.token] += required;
         }
 
         emit OrderRegistered(ctx.orderId, ctx.token, ctx.amount);
@@ -165,6 +176,9 @@ contract TreasuryPool is
     /// @dev Intentionally does not check pause state: refunds must stay possible even
     ///      while the pool is halted, otherwise pausing would trap user funds upstream.
     function onOrderRefunded(OrderTypes.OrderContext calldata ctx) external override onlyRole(ORDER_MANAGER_ROLE) {
+        if (ctx.orderType == OrderTypes.OrderType.OnRamp) {
+            reservedLiquidity[ctx.token] -= ctx.netAmount + ctx.feeAmount;
+        }
         emit OrderRefundNotified(ctx.orderId, ctx.token, ctx.amount);
     }
 

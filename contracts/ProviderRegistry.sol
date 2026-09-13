@@ -133,6 +133,13 @@ contract ProviderRegistry is IProviderRegistry, Initializable, AccessControlUpgr
         return info.adapter;
     }
 
+    /// @inheritdoc IProviderRegistry
+    function requireRegisteredProvider(bytes32 providerId) external view override returns (address) {
+        address adapter = _providers[providerId].adapter;
+        if (adapter == address(0)) revert ProviderNotRegistered(providerId);
+        return adapter;
+    }
+
     /// @notice All registered provider ids, including disabled ones. Off-chain use only.
     function allProviderIds() external view returns (bytes32[] memory) {
         return _providerIds;

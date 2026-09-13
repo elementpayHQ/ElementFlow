@@ -16,9 +16,16 @@ interface IProviderRegistry {
     function isProviderActive(bytes32 providerId) external view returns (bool);
 
     /**
-     * @notice Resolve a provider for use in settlement.
+     * @notice Resolve a provider for use in settlement / new-order routing.
      * @dev Reverts if the provider is unknown or disabled, so callers get an explicit
      *      failure instead of silently falling back to address(0).
      */
     function requireActiveProvider(bytes32 providerId) external view returns (address);
+
+    /**
+     * @notice Resolve a registered provider even when it is currently disabled.
+     * @dev Used for refunds and other unwind paths so disabling a route cannot trap
+     *      funds that were already committed to it.
+     */
+    function requireRegisteredProvider(bytes32 providerId) external view returns (address);
 }

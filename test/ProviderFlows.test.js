@@ -276,9 +276,8 @@ describe("On-ramp provider abstraction", function () {
         })
       ).to.be.revertedWithCustomError(ctx.registry, "ProviderDisabled");
 
-      // Cutting off a bad route must not strand orders already routed to it. Re-enable to
-      // unwind them cleanly.
-      await ctx.registry.connect(ctx.admin).enableProvider(PARTNER_PROVIDER_ID);
+      // Cutting off a bad route must not strand orders already routed to it — refunds
+      // resolve the adapter even while it remains disabled.
       await expect(ctx.manager.connect(ctx.aggregator).refundOrder(orderId)).to.not.be.reverted;
       expect(await ctx.partner.onOrderRefundedCalls()).to.equal(1);
     });
@@ -394,6 +393,41 @@ describe("On-ramp provider abstraction", function () {
           providerId: TREASURY_PROVIDER_ID,
         })
       ).to.be.revertedWithCustomError(ctx.pool, "InsufficientPoolLiquidity");
+    });
+
+    it("reserves pool liquidity so concurrent on-ramps and defund cannot oversubscribe", async function () {
+      const ctx = await loadFixture(fixture);
+      const tokenAddress = await ctx.token.getAddress();
+      const half = usdc(30_000);
+
+      await createOrder(ctx, {
+        amount: half,
+        orderType: OrderType.OnRamp,
+        providerId: TREASURY_PROVIDER_ID,
+        messageHash: "first-half",
+      });
+
+      expect(await ctx.pool.reservedLiquidity(tokenAddress)).to.equal(half);
+      expect(await ctx.pool.availableLiquidity(tokenAddress)).to.equal(usdc(20_000));
+
+      await expect(
+        createOrder(ctx, {
+          amount: usdc(25_000),
+          orderType: OrderType.OnRamp,
+          providerId: TREASURY_PROVIDER_ID,
+          messageHash: "oversubscribe",
+        })
+      ).to.be.revertedWithCustomError(ctx.pool, "InsufficientPoolLiquidity");
+
+      await expect(
+        ctx.pool.connect(ctx.admin).defund(tokenAddress, ctx.treasury.address, usdc(25_000))
+      ).to.be.revertedWithCustomError(ctx.pool, "InsufficientPoolLiquidity");
+
+      // Unreserved float remains withdrawable.
+      await expect(ctx.pool.connect(ctx.admin).defund(tokenAddress, ctx.treasury.address, usdc(20_000))).to.emit(
+        ctx.pool,
+        "Defunded"
+      );
     });
 
     it("rejects unsupported tokens", async function () {

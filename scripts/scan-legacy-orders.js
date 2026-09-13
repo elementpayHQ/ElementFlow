@@ -39,15 +39,18 @@ async function main() {
   console.log(`\nFound ${orderIds.size} orders. Reading current status...`);
 
   const pendingOffRampByToken = new Map();
-  const summary = { pendingOffRamp: 0, pendingOnRamp: 0, completed: 0, cancelled: 0, unreadable: 0 };
+  const summary = { pendingOffRamp: 0, pendingOnRamp: 0, completed: 0, cancelled: 0 };
 
   for (const orderId of orderIds) {
     let order;
     try {
       order = await v1.getOrder(orderId);
-    } catch {
-      summary.unreadable++;
-      continue;
+    } catch (error) {
+      // Fail closed: an undercounted seed would let v2 treat real user escrow as
+      // spendable house float. Operators must re-run after fixing RPC / decoding issues.
+      throw new Error(
+        `Failed to read order ${orderId}; refusing to emit LEGACY_ESCROW. Underlying: ${error.message}`
+      );
     }
 
     const [, , , token, amount, status, orderType] = order;

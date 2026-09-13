@@ -217,6 +217,8 @@ contract ElementFlowOrderManager is
         address[] calldata legacyEscrowTokens,
         uint256[] calldata legacyEscrowAmounts
     ) external reinitializer(2) {
+        // OZ 5.x `__Pausable_init` is a no-op against namespaced Pausable storage, so any
+        // emergency halt already set on the live v1 proxy is preserved across migration.
         __AccessControl_init();
         __Pausable_init();
         __ReentrancyGuard_init();
@@ -496,7 +498,9 @@ contract ElementFlowOrderManager is
         }
 
         if (providerId != bytes32(0)) {
-            IOnRampProvider(_resolveProvider(providerId)).onOrderRefunded(ctx);
+            // Refunds must still reach a disabled adapter so operators can cut a bad
+            // route without locking already-pending user escrow / reserved float.
+            IOnRampProvider(_resolveProviderForRefund(providerId)).onOrderRefunded(ctx);
         }
 
         emit OrderRefunded(orderId, token, requester, amount);
@@ -788,6 +792,13 @@ contract ElementFlowOrderManager is
         IProviderRegistry registry = providerRegistry;
         if (address(registry) == address(0)) revert ProviderRegistryNotSet();
         return registry.requireActiveProvider(providerId);
+    }
+
+    /// @dev Like {_resolveProvider} but tolerates a disabled route — refunds only.
+    function _resolveProviderForRefund(bytes32 providerId) private view returns (address) {
+        IProviderRegistry registry = providerRegistry;
+        if (address(registry) == address(0)) revert ProviderRegistryNotSet();
+        return registry.requireRegisteredProvider(providerId);
     }
 
     function _providerAddressOrZero(bytes32 providerId) private view returns (address) {
