@@ -529,6 +529,10 @@ contract ElementFlowOrderManager is
             escrowedBalance[token] -= amount;
             _payout(token, treasury, amount);
         } else {
+            // v1 on-ramps never reserved float. Bound the payout to unencumbered
+            // liquidity so a migration cannot pay an on-ramp out of pending off-ramp escrow.
+            uint256 free = availableLiquidity(token);
+            if (free < amount) revert InsufficientLiquidity(token, amount, free);
             _payout(token, order.requester, amount);
         }
 

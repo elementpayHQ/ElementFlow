@@ -294,6 +294,52 @@ describe("Upgrade safety", function () {
       ).to.be.revertedWithCustomError(ctx.v2, "InsufficientLiquidity");
     });
 
+    it("refuses to settle a legacy on-ramp out of pending off-ramp escrow", async function () {
+      const ctx = await deployV1Fixture();
+      const escrowed = usdc(1000);
+      const onRampAmount = usdc(500);
+
+      const offRampId = await createV1OffRampOrder(ctx, escrowed, "off-escrow");
+      const onRampTx = await ctx.v1
+        .connect(ctx.aggregator)
+        .createOrder(ctx.user.address, onRampAmount, await ctx.token.getAddress(), OrderType.OnRamp, "legacy-on");
+      const onRampReceipt = await onRampTx.wait();
+      const onRampId = onRampReceipt.logs
+        .map((l) => {
+          try {
+            return ctx.v1.interface.parseLog(l);
+          } catch {
+            return null;
+          }
+        })
+        .find((l) => l && l.name === "OrderCreated").args.orderId;
+
+      const V2 = await ethers.getContractFactory("ElementFlowOrderManager", ctx.owner);
+      const v2 = await upgrades.upgradeProxy(await ctx.v1.getAddress(), V2, {
+        kind: "uups",
+        call: {
+          fn: "initializeV2",
+          args: [
+            ctx.owner.address,
+            ctx.aggregator.address,
+            ctx.feeRecipient.address,
+            0,
+            3600,
+            [await ctx.token.getAddress()],
+            [escrowed],
+          ],
+        },
+      });
+
+      // Proxy balance is entirely off-ramp escrow — settling the legacy on-ramp must fail closed.
+      await expect(v2.connect(ctx.aggregator).settleLegacyOrder(onRampId)).to.be.revertedWithCustomError(
+        v2,
+        "InsufficientLiquidity"
+      );
+      expect(await v2.escrowedBalance(await ctx.token.getAddress())).to.equal(escrowed);
+      expect((await v2.legacyOrders(offRampId)).status).to.equal(0); // still Pending
+    });
+
     it("serves new v2 orders on the upgraded proxy", async function () {
       const ctx = await loadFixture(upgradedFixture);
       const tokenAddress = await ctx.token.getAddress();
