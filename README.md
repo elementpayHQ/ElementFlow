@@ -126,3 +126,7 @@ npm run coverage
 ## License
 
 BSL-1.1
+
+## Backend cutover
+
+Aggregator + listener handoff (events, errors, liquidity): [`docs/AGGREGATOR_LISTENER_HANDOFF.md`](docs/AGGREGATOR_LISTENER_HANDOFF.md)

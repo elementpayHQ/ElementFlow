@@ -28,3 +28,7 @@ coverage/
 
 # Test results
 test-results/
+.env.testnet-ephemeral
+deployments/hardhat-*.json
+deployments/base-sepolia-*.json
+deployments/TESTNET_DEPLOY_STATUS.txt
