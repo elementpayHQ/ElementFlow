@@ -1,220 +1,128 @@
-# ElementFlow - Order Management System
+# ElementFlow
 
-A decentralized order management system built on Base Sepolia, enabling secure on-chain order processing with upgradeable smart contracts.
+Upgradeable escrow and settlement contracts for fiat on-ramp and off-ramp orders.
 
-## 🏗️ Architecture
+> **Full audit and architecture review:** [`docs/ElementFlow-Security-Architecture.ipynb`](docs/ElementFlow-Security-Architecture.ipynb)
 
-- **Proxy Pattern**: Uses OpenZeppelin's upgradeable proxy contracts
-- **Base Sepolia**: Deployed on Base's testnet for low-cost transactions
-- **Order Types**: Supports both OnRamp and OffRamp order processing
-- **Access Control**: Role-based permissions for aggregator and owner functions
+## Status
 
-## 📋 Prerequisites
+`ElementFlowOrderManager` (v2) is a **storage-compatible successor** to the v1
+`OrderManagement` contract currently live behind UUPS proxies on Base and Base Sepolia. It
+is designed to be deployed by **upgrading the existing proxies in place** — the address does
+not change and pending orders survive. See §6.2 of the notebook for the runbook.
 
-- Node.js v18.20.8+
-- npm v10.8.2+
-- MetaMask or similar wallet
-- Base Sepolia testnet ETH
+The v1 implementation carries two vulnerabilities that are exploitable by any address:
+permissionless `escrowFunds`/`releaseEscrow` can permanently freeze a user's escrow, and
+`createOrder` has no access control. Both are closed in v2.
 
-## 🚀 Quick Start
+## Architecture
 
-### 1. Install Dependencies
+```
+  ProviderRegistry (UUPS) ──── providerId ──▶ adapter
+          │ resolves
+          ▼
+  ElementFlowOrderManager (UUPS)          escrowedBalance[token]  ← user funds
+   escrow · settlement · fees · roles     reservedLiquidity[token] ← house float
+          │ IOnRampProvider               invariant: balance ≥ escrowed + reserved
+     ┌────┴─────┐
+     ▼          ▼
+ TreasuryPool   Partner adapter
+ (in-house)     (Yellow Card-style)
+```
+
+| Contract | Role |
+|----------|------|
+| `ElementFlowOrderManager` | Order lifecycle, escrow, settlement, fees, access control |
+| `ProviderRegistry` | Maps `providerId` → settlement adapter; enable/disable/swap routes |
+| `TreasuryPool` | ElementFlow's own liquidity, implemented as the default `IOnRampProvider` |
+| `IOnRampProvider` | Adapter interface — a partner is added, not built in |
+| `legacy/OrderManagementV1.sol` | Retained solely so upgrade tests run against real v1 bytecode |
+
+Settlement adapters are **never trusted to report success**: the manager verifies the
+beneficiary's token balance delta across the call, so an adapter that underpays or
+misdirects funds can only fail closed.
+
+## Quick start
+
 ```bash
 npm install
+npm run compile
+npm test          # 113 tests
 ```
 
-### 2. Environment Setup
-Create `.env` file in project root:
-```bash
-# Network Configuration
-BASE_SEPOLIA_URL=https://sepolia.base.org
-PRIVATE_KEY=your_private_key_here
-
-# Explorer API Keys
-BASESCAN_API_KEY=your_basescan_api_key_here
-
-# Optional
-REPORT_GAS=true
-```
-
-### 3. Compile Contracts
-```bash
-npx hardhat compile
-```
-
-### 4. Run Tests
-```bash
-npx hardhat test
-```
-
-## 🎯 Deployment Guide
-
-### Deploy to Base Sepolia
-
-#### Option A: Deploy Proxy + Implementation (Recommended)
-```bash
-npx hardhat run scripts/deploy.js --network base-sepolia
-```
-
-**Output Example:**
-```
-✅ Deployment successful!
-📋 Contract Addresses:
-   Proxy (interact with this): 0x8B5B742A62AeC73542112a98C5E3684c26dbcd01
-   Implementation: 0xc097A370b03128FCBF15e49b4696c44B89337767
-```
-
-#### Option B: Deploy Implementation Only
-```bash
-npx hardhat run scripts/deploy-base-sepolia.js --network base-sepolia
-```
-
-**Output Example:**
-```
-OrderManagement deployed to: 0x29DC3fe6026FE4d9bCA6bcF73054E2D9255C7814
-```
-
-## 🔍 Verification Guide
-
-### 1. Verify Implementation Contract
-```bash
-npx hardhat verify --network base-sepolia IMPLEMENTATION_ADDRESS
-```
-
-**Example:**
-```bash
-npx hardhat verify --network base-sepolia 0xc097A370b03128FCBF15e49b4696c44B89337767
-```
-
-### 2. Verify with Constructor Arguments (if needed)
-```bash
-npx hardhat verify --network base-sepolia IMPLEMENTATION_ADDRESS --constructor-args scripts/args.js
-```
-
-### 3. Check Verification Status
-- Visit: `https://sepolia.basescan.org/address/IMPLEMENTATION_ADDRESS#code`
-- Look for green checkmark ✅
-
-## 📝 Contract Addresses (Current)
-
-### Base Sepolia Testnet
-- **Proxy:** `0x8B5B742A62AeC73542112a98C5E3684c26dbcd01`
-- **Implementation:** `0xc097A370b03128FCBF15e49b4696c44B89337767`
-- **Treasury:** `0x10b85FF94B64EE33BF6D5795CeE03eD9B3306C3f`
-
-## 🔗 Frontend Integration
-
-### Connect to Proxy Contract
-```javascript
-import { ethers } from 'ethers';
-import OrderManagementABI from './artifacts/contracts/OrderManagement.sol/OrderManagement.json';
-
-const PROXY_ADDRESS = "0x8B5B742A62AeC73542112a98C5E3684c26dbcd01";
-
-const provider = new ethers.providers.Web3Provider(window.ethereum);
-const signer = provider.getSigner();
-
-const contract = new ethers.Contract(
-  PROXY_ADDRESS,
-  OrderManagementABI.abi,
-  signer
-);
-
-// Create an order
-await contract.createOrder(tokenAddress, amount, orderType);
-
-// Read order details
-const order = await contract.orders(orderId);
-```
-
-### Available Methods
-- `createOrder(token, amount, orderType)`
-- `fulfillOrder(orderId, provider)`
-- `refundOrder(orderId)`
-- `orders(orderId)` - Read order details
-- `checkAllowance(token, owner)`
-
-## 🧪 Testing
-
-### Run All Tests
-```bash
-npx hardhat test
-```
-
-### Run Specific Test
-```bash
-npx hardhat test test/OrderManagement.test.js
-```
-
-### Run with Coverage
-```bash
-npx hardhat coverage
-```
-
-## 🔧 Development Commands
+## Deployment
 
 ```bash
-# Start local node
-npx hardhat node
-
-# Deploy to local network
-npx hardhat run scripts/deploy.js --network localhost
-
-# Console interaction
-npx hardhat console --network base-sepolia
-
-# Gas estimation
-npx hardhat run scripts/gas-estimation.js
+cp .env.example .env    # fill in four DISTINCT role addresses; admin should be a multisig
+npm run deploy -- --network base-sepolia
 ```
 
-## 📊 Gas Optimization
+Upgrading a live v1 proxy (compute the escrow seed first — see the script header, it is the
+one input that can cause fund loss if wrong):
 
-- **Compiler:** Solidity 0.8.22
-- **Optimizer:** Enabled (200 runs)
-- **Target:** EVM Paris
+```bash
+PROXY_ADDRESS=0x... FROM_BLOCK=<deploy block> npm run scan:legacy -- --network base
+PROXY_ADDRESS=0x... LEGACY_ESCROW=0xToken:amount npm run upgrade:v2 -- --network base
+```
 
-## 🚨 Security Considerations
+## Roles
 
-- **Access Control:** Only aggregator can fulfill/refund orders
-- **Pausable:** Emergency pause functionality
-- **Reentrancy Guards:** Protected against reentrancy attacks
-- **Input Validation:** Comprehensive parameter validation
+| Role | Capability |
+|------|-----------|
+| `DEFAULT_ADMIN_ROLE` | Configuration, token allowlist, role management, unpause |
+| `UPGRADER_ROLE` | Authorise implementation upgrades |
+| `PAUSER_ROLE` | Emergency pause (unpause is admin-only, by design) |
+| `AGGREGATOR_ROLE` | Settle and refund orders |
+| `ORDER_CREATOR_ROLE` | Create orders on a user's behalf (backend relay) |
+| `TREASURER_ROLE` | Deposit/withdraw float and rescue stray tokens, bounded so neither can reach user escrow |
 
-## 📱 BaseScan Links
+The backend's hot settlement key holds only `AGGREGATOR_ROLE` and `ORDER_CREATOR_ROLE` — it
+cannot upgrade, pause, or move liquidity.
 
-- **Proxy:** https://sepolia.basescan.org/address/0x8B5B742A62AeC73542112a98C5E3684c26dbcd01
-- **Implementation:** https://sepolia.basescan.org/address/0xc097A370b03128FCBF15e49b4696c44B89337767#code
+## Backend integration
 
-## 🆘 Troubleshooting
+The v2 ABI preserves `createOrder`, `settleOrder`, `refundOrder`, `checkAllowance`, the
+`OrderCreated` event signature, and the flat 8-tuple `getOrder` view **including v1's status
+numbering** (`0=Pending, 1=Settled, 2=Refunded`). `getOrderRecord` returns the richer v2
+struct for new code.
 
-### Common Issues
+Two changes are required backend-side:
 
-1. **"No API token found"**
-   - Add `BASESCAN_API_KEY` to `.env`
-   - Run verification again
+- v2 reverts with **typed custom errors** rather than strings; retry logic that matches on
+  revert strings must be updated.
+- `OrderAlreadyExists` means the intent was already recorded — treat it as
+  **success-idempotent**, not failure. This is the contract-level fix for the BUG-01
+  off-ramp double-payment class.
 
-2. **"Contract already verified"**
-   - Use `--force` flag if updating
-   - Check existing verification
+## Security
 
-3. **"Proxy shows no methods"**
-   - This is expected behavior
-   - Use implementation address for reading ABI
-   - Use proxy address for interactions
+- UUPS upgrades, authorised by a role held apart from settlement
+- Role-based access control with owner/admin/aggregator/treasurer separation
+- Pausable, with asymmetric pause/unpause authority
+- `ReentrancyGuard` on every state-changing entry point, strict checks-effects-interactions
+- `SafeERC20` throughout — USDT-style no-return tokens work; fee-on-transfer tokens are
+  rejected at creation rather than silently breaking accounting
+- User escrow and house float are segregated and separately accounted
+- Permissionless refund after order expiry, so a stalled aggregator cannot trap user funds
 
-4. **"Insufficient funds"**
-   - Get testnet ETH from Base Sepolia faucet
-   - Check wallet balance
+Known accepted trade-offs are documented in §3 of the notebook. Recommended before mainnet:
+coverage, fuzz/invariant testing, Slither/Mythril in CI, and an external audit.
 
-### Get Help
-- Check deployment logs in `scripts/deploy.js`
-- Verify contract addresses in deployment output
-- Test with local Hardhat network first
+## Testing
 
-## 📞 Support
+```bash
+npm test                # full suite
+npm run test:gas        # with gas reporting
+npm run coverage
+```
 
-For issues or questions:
-1. Check troubleshooting section
-2. Review deployment logs
-3. Verify all environment variables
-4. Test with local network before testnet
+| Suite | Tests |
+|-------|-------|
+| `OrderLifecycle.test.js` | 29 — happy paths, idempotency, state transitions, expiry, ABI compatibility |
+| `Security.test.js` | 36 — access control, pause, reentrancy, hostile tokens, fees, liquidity safety |
+| `ProviderFlows.test.js` | 26 — registry, provider settlement, adversarial adapters, `TreasuryPool` |
+| `Upgrades.test.js` | 22 — v1 exploit reproduction, in-place upgrade, layout validation |
+
+## License
+
+BSL-1.1
