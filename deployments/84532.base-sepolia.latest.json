@@ -1,0 +1,39 @@
+{
+  "network": "base-sepolia",
+  "chainId": 84532,
+  "deployedAt": "2026-09-14T05:36:43.449Z",
+  "deployer": "0xB89fCa8025Ee60C91f74c49aDb4a0a55f5BeB166",
+  "roles": {
+    "admin": "0xB89fCa8025Ee60C91f74c49aDb4a0a55f5BeB166",
+    "aggregator": "0xB89fCa8025Ee60C91f74c49aDb4a0a55f5BeB166",
+    "treasury": "0xB89fCa8025Ee60C91f74c49aDb4a0a55f5BeB166",
+    "feeRecipient": "0xB89fCa8025Ee60C91f74c49aDb4a0a55f5BeB166"
+  },
+  "config": {
+    "feeBps": 0,
+    "orderTtl": 3600,
+    "allowlist": [
+      "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+    ]
+  },
+  "contracts": {
+    "orderManager": {
+      "proxy": "0x5cB2B2b5f8E373bb9c44Cbc190FF103d2bd11716",
+      "implementation": "0xe74781Ee78239596c1c75a58eFaD3a707F201095"
+    },
+    "providerRegistry": {
+      "proxy": "0x53757B0575A6B04aA667834917c04207066CF854",
+      "implementation": "0xC3463eAEafa77E6C396AFf8f121811B2f6946014"
+    },
+    "treasuryPool": {
+      "proxy": "0xE909CF48Fe7a288b844992aAB073CA760d03d0B2",
+      "implementation": "0xb1DB8a7c604A4201994736934f9ccE1cAe7da10a",
+      "providerId": "0x4262ec06a4f63a3160eb06c03667019e10548380120eac5856368acafcbbdda9"
+    }
+  },
+  "smoke": {
+    "fullSmokeAt": "2026-09-14T05:41:44.679Z",
+    "mockToken": "0x4A5Dd65292233C6AA037480e31CdB3483c138aB5",
+    "result": "FULL_SMOKE_OK"
+  }
+}

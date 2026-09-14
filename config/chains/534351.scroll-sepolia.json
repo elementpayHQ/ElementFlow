@@ -1,0 +1,28 @@
+{
+  "chainId": 534351,
+  "name": "Scroll Sepolia",
+  "hardhatNetwork": "scroll-sepolia",
+  "status": "planned",
+  "nativeToken": { "symbol": "ETH", "decimals": 18 },
+  "rpcEnv": "SCROLL_SEPOLIA_RPC",
+  "explorer": {
+    "browserURL": "https://sepolia.scrollscan.com",
+    "apiURL": "https://api-sepolia.scrollscan.com/api"
+  },
+  "explorerApiEnv": "SCROLLSCAN_API_KEY",
+  "tokens": [],
+  "contracts": {
+    "orderManagerProxy": null,
+    "orderManagerImpl": null,
+    "providerRegistryProxy": null,
+    "treasuryPoolProxy": null,
+    "notes": "Planned testnet."
+  },
+  "roles": {},
+  "deployment": {
+    "confirmations": 1,
+    "requireDistinctRoles": false,
+    "feeBpsDefault": 0,
+    "orderTtlDefault": 3600
+  }
+}

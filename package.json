@@ -1,14 +1,25 @@
 {
   "name": "elementflow",
   "version": "1.0.0",
-  "description": "![Shield3](https://img.shields.io/badge/Shield3-0c0c0c?style=for-the-badge&logo=shield3&logoColor=white) ![Biconomy](https://img.shields.io/badge/Biconomy-ff4e17?style=for-the-badge&logo=biconomy&logoColor=white) ![Next.js](https://img.shields.io/badge/Next.js-000000?style=for-the-badge&logo=nextdotjs&logoColor=white) ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-0f172a?style=for-the-badge&logo=tailwind-css&logoColor=white) ![Viem](https://img.shields.io/badge/Viem-232225?style=for-the-badge&logo=vue.js&logoColor=white) ![Wagmi](https://img.shields.io/badge/Wagmi-1b1b1f?style=for-the-badge&logo=wagmi&logoColor=white) ![RainbowKit](https://img.shields.io/badge/RainbowKit-6e66ee?style=for-the-badge&logo=rainbowkit&logoColor=white) # ElementFlowContract address: offramp Base mainet: 0x30f6a8457f8e42371e204a9c103f2bd42341dd0f <br> <p>onramp basesepolia: 0x8698be57c454b71e86258fabb56b10facbb2a859</p>",
+  "description": "ElementFlow \u2014 upgradeable on-ramp/off-ramp escrow and settlement contracts",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "test:gas": "REPORT_GAS=true hardhat test",
+    "coverage": "hardhat coverage",
+    "deploy": "hardhat run scripts/deploy.js",
+    "upgrade:v2": "hardhat run scripts/upgrade-v1-to-v2.js",
+    "scan:legacy": "hardhat run scripts/scan-legacy-orders.js",
+    "postdeploy:check": "hardhat run scripts/post-deploy-check.js",
+    "verify:deployment": "hardhat run scripts/verify-deployment.js",
+    "smoke:sepolia": "hardhat run scripts/smoke-base-sepolia.js --network base-sepolia",
+    "faucet:sepolia": "node scripts/request-base-sepolia-faucet.js",
+    "deploy:sepolia:wait": "node scripts/wait-and-deploy-base-sepolia.js"
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "BSL-1.1",
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "@openzeppelin/hardhat-upgrades": "^3.9.0",

@@ -1,0 +1,42 @@
+{
+  "chainId": 84532,
+  "name": "Base Sepolia",
+  "hardhatNetwork": "base-sepolia",
+  "status": "testnet",
+  "nativeToken": { "symbol": "ETH", "decimals": 18 },
+  "rpcEnv": "BASE_SEPOLIA_RPC",
+  "explorer": {
+    "browserURL": "https://sepolia.basescan.org",
+    "apiURL": "https://api-sepolia.basescan.org/api"
+  },
+  "explorerApiEnv": "BASESCAN_API_KEY",
+  "tokens": [
+    {
+      "symbol": "USDC",
+      "address": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+      "decimals": 6
+    }
+  ],
+  "contracts": {
+    "orderManagerProxy": "0x5cB2B2b5f8E373bb9c44Cbc190FF103d2bd11716",
+    "orderManagerImpl": "0xe74781Ee78239596c1c75a58eFaD3a707F201095",
+    "providerRegistryProxy": "0x53757B0575A6B04aA667834917c04207066CF854",
+    "treasuryPoolProxy": "0xE909CF48Fe7a288b844992aAB073CA760d03d0B2",
+    "notes": "Ephemeral v2 lab deploy 2026-09-14 (deployer 0xB89fCa…B166). Prior v1 OrderManagement lab proxy was 0x8B5B742A62AeC73542112a98C5E3684c26dbcd01 (impl 0xc097A370…). Upgrade that v1 with ALLOW_PROXY_OVERRIDE=1 PROXY_ADDRESS=0x8B5B… if needed. Always key by (chainId, address)."
+  },
+  "roles": {
+    "admin": "0xB89fCa8025Ee60C91f74c49aDb4a0a55f5BeB166",
+    "upgrader": "0xB89fCa8025Ee60C91f74c49aDb4a0a55f5BeB166",
+    "pauser": "0xB89fCa8025Ee60C91f74c49aDb4a0a55f5BeB166",
+    "aggregator": "0xB89fCa8025Ee60C91f74c49aDb4a0a55f5BeB166",
+    "treasury": "0xB89fCa8025Ee60C91f74c49aDb4a0a55f5BeB166",
+    "feeRecipient": "0xB89fCa8025Ee60C91f74c49aDb4a0a55f5BeB166",
+    "multisig": null
+  },
+  "deployment": {
+    "confirmations": 1,
+    "requireDistinctRoles": false,
+    "feeBpsDefault": 0,
+    "orderTtlDefault": 3600
+  }
+}

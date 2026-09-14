@@ -1,0 +1,28 @@
+{
+  "chainId": 1135,
+  "name": "Lisk",
+  "hardhatNetwork": "lisk",
+  "status": "planned",
+  "nativeToken": { "symbol": "ETH", "decimals": 18 },
+  "rpcEnv": "LISK_MAINNET_RPC",
+  "explorer": {
+    "browserURL": "https://explorer.lisk.com",
+    "apiURL": "https://explorer.lisk.com/api"
+  },
+  "explorerApiEnv": "LISKSCAN_API_KEY",
+  "tokens": [],
+  "contracts": {
+    "orderManagerProxy": null,
+    "orderManagerImpl": null,
+    "providerRegistryProxy": null,
+    "treasuryPoolProxy": null,
+    "notes": "Planned. Verify explorer API URLs before enabling Hardhat network."
+  },
+  "roles": {},
+  "deployment": {
+    "confirmations": 2,
+    "requireDistinctRoles": true,
+    "feeBpsDefault": 0,
+    "orderTtlDefault": 3600
+  }
+}

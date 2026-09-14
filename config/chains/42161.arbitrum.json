@@ -1,0 +1,28 @@
+{
+  "chainId": 42161,
+  "name": "Arbitrum One",
+  "hardhatNetwork": "arbitrum",
+  "status": "planned",
+  "nativeToken": { "symbol": "ETH", "decimals": 18 },
+  "rpcEnv": "ARBITRUM_MAINNET_RPC",
+  "explorer": {
+    "browserURL": "https://arbiscan.io",
+    "apiURL": "https://api.arbiscan.io/api"
+  },
+  "explorerApiEnv": "ARBISCAN_API_KEY",
+  "tokens": [],
+  "contracts": {
+    "orderManagerProxy": null,
+    "orderManagerImpl": null,
+    "providerRegistryProxy": null,
+    "treasuryPoolProxy": null,
+    "notes": "Scaffolded in Hardhat historically; not an ElementPay production target until checklist signed off."
+  },
+  "roles": {},
+  "deployment": {
+    "confirmations": 2,
+    "requireDistinctRoles": true,
+    "feeBpsDefault": 0,
+    "orderTtlDefault": 3600
+  }
+}
