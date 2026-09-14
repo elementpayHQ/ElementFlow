@@ -45,6 +45,7 @@ contract TreasuryPool is
 
     error ZeroAddress();
     error ZeroAmount();
+    error ZeroProviderId();
     error TokenNotSupported(address token);
     error InsufficientPoolLiquidity(address token, uint256 required, uint256 available);
 
@@ -72,6 +73,7 @@ contract TreasuryPool is
 
     function initialize(address admin, address orderManager, bytes32 providerId_) external initializer {
         if (admin == address(0) || orderManager == address(0)) revert ZeroAddress();
+        if (providerId_ == bytes32(0)) revert ZeroProviderId();
         __AccessControl_init();
         __Pausable_init();
         __ReentrancyGuard_init();

@@ -86,6 +86,14 @@ contract ProviderRegistry is IProviderRegistry, Initializable, AccessControlUpgr
 
     /// @notice Point an existing route at a new adapter implementation.
     /// @dev The route keeps its id, so orders already referencing it stay settleable.
+    /**
+     * @notice Hot-swap the adapter behind an existing `providerId`.
+     * @dev Ops constraint: do **not** call while TreasuryPool still has
+     *      `reservedLiquidity` for this providerId — reservations stay keyed by
+     *      providerId but settlement/refunds go through the new adapter. Drain or
+     *      settle open on-ramps first (disable → wait → update), or migrate
+     *      carefully offline.
+     */
     function updateProviderAdapter(bytes32 providerId, address adapter) external onlyRole(PROVIDER_ADMIN_ROLE) {
         if (adapter == address(0)) revert ZeroAddress();
         address previous = _providers[providerId].adapter;

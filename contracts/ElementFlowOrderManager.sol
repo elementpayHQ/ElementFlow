@@ -623,6 +623,7 @@ contract ElementFlowOrderManager is
     }
 
     function setProviderRegistry(address registry) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (registry == address(0)) revert ZeroAddress();
         emit ProviderRegistryUpdated(address(providerRegistry), registry);
         providerRegistry = IProviderRegistry(registry);
     }

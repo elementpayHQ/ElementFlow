@@ -156,10 +156,26 @@ async function main() {
   }
 
   console.log(`Verify on ${network.name} chainId=${config.chainId}`);
-  console.log(`Artifact deployedAt=${dep.deployedAt}`);
+  console.log(`Artifact deployedAt=${dep.deployedAt || dep.upgradedAt || "?"}`);
 
   const results = [];
-  const contracts = dep.contracts || {};
+  // Fresh deploy: dep.contracts.{orderManager,providerRegistry,treasuryPool}
+  // Upgrade artifact: top-level { proxy, implementation }
+  let contracts = dep.contracts || {};
+  if (!Object.keys(contracts).length && dep.proxy) {
+    contracts = {
+      orderManager: {
+        proxy: dep.proxy,
+        implementation: dep.implementation,
+      },
+    };
+  }
+  if (!Object.keys(contracts).length) {
+    throw new Error(
+      "Deployment artifact has no contracts to verify " +
+        `(expected dep.contracts.* or upgrade {proxy,implementation}). File shape: ${Object.keys(dep).join(",")}`
+    );
+  }
 
   for (const [name, entry] of Object.entries(contracts)) {
     if (!entry?.proxy) continue;

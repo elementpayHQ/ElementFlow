@@ -101,8 +101,15 @@ async function main() {
     );
   }
   if (!tokens.length) {
+    if (process.env.ALLOW_EMPTY_LEGACY_ESCROW !== "1") {
+      throw new Error(
+        "LEGACY_ESCROW is empty. Run scan-legacy-orders.js first, or set ALLOW_EMPTY_LEGACY_ESCROW=1 " +
+          "only if you are sure no v1 off-ramp is still pending."
+      );
+    }
     console.log(
-      "\n  WARNING: no LEGACY_ESCROW seed. Only correct if no v1 off-ramp order is still pending."
+      "\n  WARNING: ALLOW_EMPTY_LEGACY_ESCROW=1 — proceeding with no seed. " +
+        "Only correct if no v1 off-ramp order is still pending."
     );
   }
 

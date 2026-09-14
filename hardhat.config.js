@@ -1,7 +1,28 @@
 require("@nomicfoundation/hardhat-toolbox");
 require("@openzeppelin/hardhat-upgrades");
-// override: true so a blank shell export (e.g. ETHERSCAN_API_KEY=) does not win over .env
-require("dotenv").config({ override: true });
+const fs = require("fs");
+const path = require("path");
+const dotenv = require("dotenv");
+
+/**
+ * Load `.env` without clobbering non-empty process.env (e.g. ephemeral deploy scripts
+ * that set PRIVATE_KEY / roles then spawn Hardhat). Still replace blank exports so a
+ * stale `ETHERSCAN_API_KEY=` in the shell does not block `.env`.
+ */
+function loadDotenvFile(file) {
+  const full = path.isAbsolute(file) ? file : path.join(__dirname, file);
+  if (!fs.existsSync(full)) return;
+  const parsed = dotenv.parse(fs.readFileSync(full));
+  for (const [key, value] of Object.entries(parsed)) {
+    const cur = process.env[key];
+    if (cur === undefined || cur === "") {
+      process.env[key] = value;
+    }
+  }
+}
+
+loadDotenvFile(".env");
+loadDotenvFile(".env.testnet-ephemeral");
 
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {

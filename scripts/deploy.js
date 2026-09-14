@@ -128,6 +128,12 @@ async function main() {
       console.log(`  orderManager.setTokenAllowed(${token}, true)`);
       console.log(`  treasuryPool.setTokenSupported(${token}, true)`);
     }
+    if (process.env.REQUIRE_WIRED === "1") {
+      throw new Error(
+        `REQUIRE_WIRED=1 but admin (${admin}) != deployer (${deployer.address}). ` +
+          "CI / automated deploys must use the deployer as admin, or wire manually before smoke."
+      );
+    }
   }
 
   const info = {

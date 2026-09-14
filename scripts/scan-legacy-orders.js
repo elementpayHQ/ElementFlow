@@ -15,6 +15,9 @@ const {
 const V1_STATUS = { Pending: 0, Completed: 1, Cancelled: 2 };
 const ORDER_TYPE = { OnRamp: 0, OffRamp: 1 };
 const CHUNK = Number(process.env.LOG_CHUNK ?? 50_000);
+if (!Number.isFinite(CHUNK) || CHUNK <= 0) {
+  throw new Error(`LOG_CHUNK must be a positive number (got ${process.env.LOG_CHUNK})`);
+}
 
 async function main() {
   const providerNet = await ethers.provider.getNetwork();

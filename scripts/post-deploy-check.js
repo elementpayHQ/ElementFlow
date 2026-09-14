@@ -39,16 +39,36 @@ async function main() {
   });
 
   const latest = loadLatestDeployment(config.chainId || Number(providerNet.chainId), network.name);
-  const omProxy =
-    process.env.PROXY_ADDRESS ||
-    latest?.data?.contracts?.orderManager?.proxy ||
-    latest?.data?.proxy ||
-    config.contracts?.orderManagerProxy;
+  // Prefer the deployment artifact from this run over a stale PROXY_ADDRESS in .env
+  // (lab .env.example pins an older OM). Set FORCE_PROXY_ADDRESS=1 to force env.
+  const forceEnvProxy = process.env.FORCE_PROXY_ADDRESS === "1";
+  const omProxy = forceEnvProxy
+    ? process.env.PROXY_ADDRESS ||
+      latest?.data?.contracts?.orderManager?.proxy ||
+      latest?.data?.proxy ||
+      config.contracts?.orderManagerProxy
+    : latest?.data?.contracts?.orderManager?.proxy ||
+      latest?.data?.proxy ||
+      process.env.PROXY_ADDRESS ||
+      config.contracts?.orderManagerProxy;
   const registryProxy =
     latest?.data?.contracts?.providerRegistry?.proxy || config.contracts?.providerRegistryProxy;
   const poolProxy =
     latest?.data?.contracts?.treasuryPool?.proxy || config.contracts?.treasuryPoolProxy;
 
+  if (
+    !forceEnvProxy &&
+    process.env.PROXY_ADDRESS &&
+    latest?.data?.contracts?.orderManager?.proxy &&
+    ethers.getAddress(process.env.PROXY_ADDRESS) !==
+      ethers.getAddress(latest.data.contracts.orderManager.proxy)
+  ) {
+    console.warn(
+      `  NOTE: PROXY_ADDRESS=${process.env.PROXY_ADDRESS} differs from latest deploy ` +
+        `${latest.data.contracts.orderManager.proxy} — checking the latest deploy. ` +
+        `Set FORCE_PROXY_ADDRESS=1 to force env.`
+    );
+  }
   if (!omProxy) throw new Error("No OrderManager proxy to check");
 
   const code = await ethers.provider.getCode(omProxy);
