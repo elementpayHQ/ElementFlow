@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "feat/**", "fix/**"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npx hardhat compile
+      - run: npx hardhat test
+      # Static analysis (best-effort; do not block if slither unavailable in image)
+      - name: Slither (optional)
+        continue-on-error: true
+        run: |
+          pip install slither-analyzer || true
+          slither . --filter-paths "node_modules|contracts/mocks|contracts/legacy" || true
+
+  # Explicit: never deploy or upgrade production from CI merge events.
+  no-prod-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Production deploy/upgrade is manual + multisig only. See docs/MULTICHAIN.md."

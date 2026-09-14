@@ -1,36 +1,44 @@
 /**
  * Computes the `LEGACY_ESCROW` seed required by `scripts/upgrade-v1-to-v2.js`.
  *
- * Enumerates every v1 `OrderCreated` event, then reads each order's *current* on-chain
- * status rather than replaying settle/refund events. That matters: v1's `releaseEscrow`
- * also moves an order to `Completed` without emitting `OrderSettled`, so an event-only
- * reconstruction would over-count pending escrow.
- *
  *   PROXY_ADDRESS=0x... FROM_BLOCK=12345678 \
  *     npx hardhat run scripts/scan-legacy-orders.js --network base
+ *
+ * PROXY_ADDRESS must match config orderManagerProxy unless ALLOW_PROXY_OVERRIDE=1.
  */
 const { ethers, network } = require("hardhat");
+const {
+  resolveAndAssertChain,
+  resolveProxyAddress,
+} = require("./lib/chainConfig");
 
 const V1_STATUS = { Pending: 0, Completed: 1, Cancelled: 2 };
 const ORDER_TYPE = { OnRamp: 0, OffRamp: 1 };
 const CHUNK = Number(process.env.LOG_CHUNK ?? 50_000);
 
 async function main() {
-  const proxyAddress = process.env.PROXY_ADDRESS;
-  if (!proxyAddress) throw new Error("PROXY_ADDRESS is required");
+  const providerNet = await ethers.provider.getNetwork();
+  const config = resolveAndAssertChain({
+    networkName: network.name,
+    providerChainId: providerNet.chainId,
+    allowLocal: false,
+    allowPlanned: false,
+  });
 
+  const proxyAddress = resolveProxyAddress(config);
   const fromBlock = Number(process.env.FROM_BLOCK ?? 0);
   const toBlock = Number(process.env.TO_BLOCK ?? (await ethers.provider.getBlockNumber()));
 
   const v1 = await ethers.getContractAt("OrderManagement", proxyAddress);
   const filter = v1.filters.OrderCreated();
 
-  console.log(`Scanning ${proxyAddress} on ${network.name}, blocks ${fromBlock}..${toBlock}`);
+  console.log(
+    `Scanning ${proxyAddress} on ${config.name} (chainId=${config.chainId}), blocks ${fromBlock}..${toBlock}`
+  );
 
   const orderIds = new Set();
   for (let start = fromBlock; start <= toBlock; start += CHUNK) {
     const end = Math.min(start + CHUNK - 1, toBlock);
-    // RPC providers cap log ranges, so page through rather than asking for everything.
     const logs = await v1.queryFilter(filter, start, end);
     logs.forEach((log) => orderIds.add(log.args.orderId));
     if (logs.length) console.log(`  ${start}..${end}: ${logs.length} orders (total ${orderIds.size})`);
@@ -46,8 +54,6 @@ async function main() {
     try {
       order = await v1.getOrder(orderId);
     } catch (error) {
-      // Fail closed: an undercounted seed would let v2 treat real user escrow as
-      // spendable house float. Operators must re-run after fixing RPC / decoding issues.
       throw new Error(
         `Failed to read order ${orderId}; refusing to emit LEGACY_ESCROW. Underlying: ${error.message}`
       );
@@ -62,7 +68,6 @@ async function main() {
       const key = ethers.getAddress(token);
       pendingOffRampByToken.set(key, (pendingOffRampByToken.get(key) ?? 0n) + amount);
     } else {
-      // Pending on-ramp orders hold no on-chain escrow, so they contribute nothing.
       summary.pendingOnRamp++;
     }
   }

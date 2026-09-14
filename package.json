@@ -10,7 +10,12 @@
     "coverage": "hardhat coverage",
     "deploy": "hardhat run scripts/deploy.js",
     "upgrade:v2": "hardhat run scripts/upgrade-v1-to-v2.js",
-    "scan:legacy": "hardhat run scripts/scan-legacy-orders.js"
+    "scan:legacy": "hardhat run scripts/scan-legacy-orders.js",
+    "postdeploy:check": "hardhat run scripts/post-deploy-check.js",
+    "verify:deployment": "hardhat run scripts/verify-deployment.js",
+    "smoke:sepolia": "hardhat run scripts/smoke-base-sepolia.js --network base-sepolia",
+    "faucet:sepolia": "node scripts/request-base-sepolia-faucet.js",
+    "deploy:sepolia:wait": "node scripts/wait-and-deploy-base-sepolia.js"
   },
   "keywords": [],
   "author": "",

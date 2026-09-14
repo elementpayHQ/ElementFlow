@@ -32,3 +32,4 @@ test-results/
 deployments/hardhat-*.json
 deployments/base-sepolia-*.json
 deployments/TESTNET_DEPLOY_STATUS.txt
+deployments/31337.hardhat*.json

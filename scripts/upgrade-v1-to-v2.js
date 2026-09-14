@@ -9,20 +9,19 @@
  *   PROXY_ADDRESS=0x... LEGACY_ESCROW=0xTokenA:1000000,0xTokenB:5000000 \
  *     npx hardhat run scripts/upgrade-v1-to-v2.js --network base-sepolia
  *
- * ## Computing LEGACY_ESCROW (required, and easy to get wrong)
- *
- * v1 kept no escrow accounting. Without a seed, v2 would treat the proxy's entire balance
- * as unencumbered house float and could pay it out from under off-ramp users whose orders
- * are still pending. For each token, sum `amount` over every v1 order that is currently
- * `status == Pending (0)` AND `orderType == OffRamp (1)`. `scripts/scan-legacy-orders.js`
- * derives this from OrderCreated/OrderSettled/OrderRefunded logs.
- *
- * Seeding too low risks paying out user escrow; seeding too high only locks house float,
- * which a treasurer can release later. When in doubt, round up.
+ * PROXY_ADDRESS must match config/chains/<chainId>.*.json contracts.orderManagerProxy
+ * unless ALLOW_PROXY_OVERRIDE=1.
  */
 const { ethers, upgrades, network } = require("hardhat");
 const fs = require("fs");
 const path = require("path");
+const {
+  resolveAndAssertChain,
+  envRolePrefix,
+  resolveRoleAddress,
+  resolveProxyAddress,
+  assertDistinctRoles,
+} = require("./lib/chainConfig");
 
 function parseLegacyEscrow(raw) {
   if (!raw) return { tokens: [], amounts: [] };
@@ -38,24 +37,51 @@ function parseLegacyEscrow(raw) {
 }
 
 async function main() {
-  const proxyAddress = process.env.PROXY_ADDRESS;
-  if (!proxyAddress) throw new Error("PROXY_ADDRESS is required");
-
   const [signer] = await ethers.getSigners();
-  const prefix = network.name.toUpperCase().replace(/-/g, "_");
+  const warnings = [];
+  const providerNet = await ethers.provider.getNetwork();
+  const config = resolveAndAssertChain({
+    networkName: network.name,
+    providerChainId: providerNet.chainId,
+    allowLocal: false,
+    allowPlanned: false,
+  });
 
-  const admin = ethers.getAddress(process.env[`${prefix}_ADMIN_ADDRESS`] ?? signer.address);
-  const aggregator = ethers.getAddress(process.env[`${prefix}_AGGREGATOR_ADDRESS`] ?? signer.address);
-  const feeRecipient = ethers.getAddress(process.env[`${prefix}_FEE_RECIPIENT_ADDRESS`] ?? admin);
-  const feeBps = Number(process.env.FEE_BPS ?? 0);
-  const orderTtl = Number(process.env.ORDER_TTL ?? 3600);
+  const proxyAddress = resolveProxyAddress(config);
+  const prefix = envRolePrefix(network.name);
+
+  const admin = resolveRoleAddress({
+    envKey: `${prefix}_ADMIN_ADDRESS`,
+    fallback: signer.address,
+    config,
+    warnings,
+    label: "admin",
+  });
+  const aggregator = resolveRoleAddress({
+    envKey: `${prefix}_AGGREGATOR_ADDRESS`,
+    fallback: signer.address,
+    config,
+    warnings,
+    label: "aggregator",
+  });
+  const feeRecipient = resolveRoleAddress({
+    envKey: `${prefix}_FEE_RECIPIENT_ADDRESS`,
+    fallback: admin,
+    config,
+    warnings,
+    label: "feeRecipient",
+  });
+  assertDistinctRoles({ admin, aggregator, feeRecipient }, config);
+
+  const feeBps = Number(process.env.FEE_BPS ?? config.deployment?.feeBpsDefault ?? 0);
+  const orderTtl = Number(process.env.ORDER_TTL ?? config.deployment?.orderTtlDefault ?? 3600);
   const { tokens, amounts } = parseLegacyEscrow(process.env.LEGACY_ESCROW);
 
   const v1 = await ethers.getContractAt("OrderManagement", proxyAddress);
   const currentOwner = await v1.owner();
   const currentTreasury = await v1.treasury();
 
-  console.log(`\nUpgrading ${proxyAddress} on ${network.name}`);
+  console.log(`\nUpgrading ${proxyAddress} on ${config.name} (chainId=${config.chainId})`);
   console.log("  signer          :", signer.address);
   console.log("  current owner   :", currentOwner);
   console.log("  current treasury:", currentTreasury, "(carried over from v1 storage)");
@@ -82,11 +108,11 @@ async function main() {
 
   const V2 = await ethers.getContractFactory("ElementFlowOrderManager");
 
-  // Fails loudly on any storage-layout incompatibility before anything is broadcast.
   console.log("\nValidating storage layout...");
   await upgrades.validateUpgrade(proxyAddress, V2, { kind: "uups" });
   console.log("  layout is compatible");
 
+  const wasPaused = await v1.paused();
   const v2 = await upgrades.upgradeProxy(proxyAddress, V2, {
     kind: "uups",
     call: {
@@ -102,6 +128,11 @@ async function main() {
   console.log("  implementation:", implementation);
   console.log("  version       :", await v2.getVersion());
   console.log("  treasury      :", await v2.treasury());
+  console.log("  paused        :", await v2.paused(), wasPaused ? "(preserved from v1)" : "");
+
+  if (wasPaused && !(await v2.paused())) {
+    throw new Error("Post-upgrade check failed: v1 was paused but v2 is not");
+  }
 
   for (const [i, token] of tokens.entries()) {
     const seeded = await v2.escrowedBalance(token);
@@ -113,6 +144,7 @@ async function main() {
 
   const record = {
     network: network.name,
+    chainId: config.chainId,
     upgradedAt: new Date().toISOString(),
     proxy: proxyAddress,
     implementation,
@@ -124,12 +156,23 @@ async function main() {
   const dir = path.join(__dirname, "..", "deployments");
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, `upgrade-${network.name}-${Date.now()}.json`), JSON.stringify(record, null, 2));
+  fs.writeFileSync(
+    path.join(dir, `${config.chainId}.${network.name}.upgrade.latest.json`),
+    JSON.stringify(record, null, 2)
+  );
+
+  if (warnings.length) {
+    console.log("\nWARNINGS");
+    warnings.forEach((w) => console.log("  -", w));
+  }
 
   console.log("\nNext steps:");
   console.log("  1. Allowlist tokens: setTokenAllowed(token, true) — v2 rejects unlisted tokens.");
   console.log("  2. Deploy + register ProviderRegistry and TreasuryPool, then setProviderRegistry.");
   console.log("  3. Drain pending v1 orders with settleLegacyOrder / refundLegacyOrder.");
   console.log("  4. Move DEFAULT_ADMIN_ROLE and UPGRADER_ROLE to the governance multisig.");
+  console.log("  5. Update config/chains + run scripts/post-deploy-check.js — this chain only.");
+  console.log("  6. Do NOT assume other chains are upgraded because this one succeeded.");
 }
 
 main().catch((error) => {

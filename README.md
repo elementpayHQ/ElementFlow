@@ -2,7 +2,8 @@
 
 Upgradeable escrow and settlement contracts for fiat on-ramp and off-ramp orders.
 
-> **Full audit and architecture review:** [`docs/ElementFlow-Security-Architecture.ipynb`](docs/ElementFlow-Security-Architecture.ipynb)
+> **Full audit and architecture review:** [`docs/ElementFlow-Security-Architecture.ipynb`](docs/ElementFlow-Security-Architecture.ipynb)  
+> **Pre-deploy QA & security report (2026-09-14):** [`docs/SECURITY_AUDIT_REPORT.md`](docs/SECURITY_AUDIT_REPORT.md) — **Go-with-conditions** for Base
 
 ## Status
 
@@ -47,14 +48,20 @@ misdirects funds can only fail closed.
 ```bash
 npm install
 npm run compile
-npm test          # 113 tests
+npm test          # 123 tests
 ```
 
 ## Deployment
 
 ```bash
-cp .env.example .env    # fill in four DISTINCT role addresses; admin should be a multisig
+cp .env.example .env
+# Fill DISTINCT role addresses — ADMIN/TREASURY/FEE should be Safe multisigs on live.
+# Set ETHERSCAN_API_KEY (Etherscan API v2 — one key for Base + Base Sepolia).
 npm run deploy -- --network base-sepolia
+# deploy.js verifies proxies+impls automatically. Re-run anytime with:
+DEPLOYMENT_FILE=deployments/84532.base-sepolia.latest.json \
+  npm run verify:deployment -- --network base-sepolia
+npm run postdeploy:check -- --network base-sepolia
 ```
 
 Upgrading a live v1 proxy (compute the escrow seed first — see the script header, it is the
@@ -63,6 +70,7 @@ one input that can cause fund loss if wrong):
 ```bash
 PROXY_ADDRESS=0x... FROM_BLOCK=<deploy block> npm run scan:legacy -- --network base
 PROXY_ADDRESS=0x... LEGACY_ESCROW=0xToken:amount npm run upgrade:v2 -- --network base
+# Then verify the new implementation / proxy link on the explorer.
 ```
 
 ## Roles
@@ -96,32 +104,70 @@ Two changes are required backend-side:
 
 ## Security
 
+Contract properties:
+
 - UUPS upgrades, authorised by a role held apart from settlement
 - Role-based access control with owner/admin/aggregator/treasurer separation
 - Pausable, with asymmetric pause/unpause authority
-- `ReentrancyGuard` on every state-changing entry point, strict checks-effects-interactions
+- `ReentrancyGuard` on every OrderManager state-changing entry point, strict CEI
 - `SafeERC20` throughout — USDT-style no-return tokens work; fee-on-transfer tokens are
   rejected at creation rather than silently breaking accounting
-- User escrow and house float are segregated and separately accounted
-- Permissionless refund after order expiry, so a stalled aggregator cannot trap user funds
+- User escrow and house float are segregated (`escrowedBalance` vs `reservedLiquidity`)
+- Permissionless refund after order TTL (when **not** paused)
 
-Known accepted trade-offs are documented in §3 of the notebook. Recommended before mainnet:
-coverage, fuzz/invariant testing, Slither/Mythril in CI, and an external audit.
+Pre-deploy report: [`docs/SECURITY_AUDIT_REPORT.md`](docs/SECURITY_AUDIT_REPORT.md).  
+Known accepted trade-offs: notebook §3 + report residual risks.
+
+### Operational best practices (mainnet)
+
+1. **Multisig for governance** — Put `DEFAULT_ADMIN_ROLE` / `UPGRADER_ROLE` / `PAUSER_ROLE` /
+   `TREASURER_ROLE` on a Safe (ideally behind a Timelock). Put **treasury** and **fee recipient**
+   on Safes or custody wallets. Never leave live roles as the deployer EOA.
+2. **Hot keys only for create/settle** — `ORDER_CREATOR_ROLE` and `AGGREGATOR_ROLE` may share a
+   backend key or be split; they must **not** hold upgrader/admin. Scope keys **per chain**.
+3. **No deployer fallback on live** — `config/chains` `requireDistinctRoles` / status=`live`
+   hard-fails missing role env vars. Do not override that for Base.
+4. **Upgrade seeding** — Run `scan-legacy-orders.js` (fail-closed). Dual-review `LEGACY_ESCROW`
+   before `upgrade-v1-to-v2`. Undercount turns pending user escrow into spendable float.
+5. **Liquidity** — Default on-ramp float lives on **TreasuryPool** (`fund`), not “whatever is
+   sitting on OrderManager.” Never treat raw `balanceOf(OM)` as free liquidity.
+6. **Dual allowlists** — Allowlist tokens on OrderManager **and** TreasuryPool (post-deploy check).
+7. **Pause vs user liveness** — Manager pause also blocks `refundExpiredOrder`. Prefer
+   `disableProvider` / pool pause when you need to halt routes without freezing self-refunds.
+   See [`docs/INCIDENT_RESPONSE.md`](docs/INCIDENT_RESPONSE.md).
+8. **Verify every deploy** — `ETHERSCAN_API_KEY` (API v2 single string) +
+   `npm run verify:deployment`. Confirm Read/Write as Proxy on the explorer.
+9. **Adapters** — Only register audited `IOnRampProvider` implementations; a reverting
+   `onOrderRefunded` can brick refunds for that route.
+10. **Backend cutover** — Custom errors, `OrderAlreadyExists` idempotency, v2 settle/refund
+    event ABI, pool `availableLiquidity` preflight:
+    [`docs/AGGREGATOR_LISTENER_HANDOFF.md`](docs/AGGREGATOR_LISTENER_HANDOFF.md).
+
+Recommended before large TVL: external audit, fuzz/invariants, Slither gating in CI.
 
 ## Testing
 
 ```bash
-npm test                # full suite
+npm test                # full suite (123)
 npm run test:gas        # with gas reporting
 npm run coverage
 ```
 
 | Suite | Tests |
 |-------|-------|
-| `OrderLifecycle.test.js` | 29 — happy paths, idempotency, state transitions, expiry, ABI compatibility |
-| `Security.test.js` | 36 — access control, pause, reentrancy, hostile tokens, fees, liquidity safety |
-| `ProviderFlows.test.js` | 26 — registry, provider settlement, adversarial adapters, `TreasuryPool` |
-| `Upgrades.test.js` | 22 — v1 exploit reproduction, in-place upgrade, layout validation |
+| `OrderLifecycle.test.js` | Happy paths, idempotency, state transitions, expiry, ABI compatibility |
+| `Security.test.js` | Access control, pause, reentrancy, hostile tokens, fees, liquidity safety |
+| `ProviderFlows.test.js` | Registry, provider settlement, adversarial adapters, `TreasuryPool` |
+| `Upgrades.test.js` | v1 exploit reproduction, in-place upgrade, layout validation |
+| `Multichain.test.js` | chainId-bound order ids + `config/chains` loader guards |
+
+## Multichain
+
+- Chain configs: [`config/chains/`](config/chains/)
+- Ops guide: [`docs/MULTICHAIN.md`](docs/MULTICHAIN.md)
+- Incident response: [`docs/INCIDENT_RESPONSE.md`](docs/INCIDENT_RESPONSE.md)
+- New chain checklist: [`docs/ADD_CHAIN_CHECKLIST.md`](docs/ADD_CHAIN_CHECKLIST.md)
+- Security audit (pre-deploy): [`docs/SECURITY_AUDIT_REPORT.md`](docs/SECURITY_AUDIT_REPORT.md)
 
 ## License
 

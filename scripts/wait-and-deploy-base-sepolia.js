@@ -6,13 +6,19 @@
  * Expects .env / .env.testnet-ephemeral with PRIVATE_KEY and role addresses.
  * Exit 0 = deployed+smoke ok; 2 = still unfunded; 1 = failure.
  */
-require("dotenv").config({ path: require("path").join(__dirname, "..", ".env") });
+const path = require("path");
+require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
+require("dotenv").config({
+  path: path.join(__dirname, "..", ".env.testnet-ephemeral"),
+  override: true,
+});
 const { spawnSync } = require("child_process");
 const { ethers } = require("ethers");
 const fs = require("fs");
-const path = require("path");
 
-const MIN_ETH = ethers.parseEther("0.002");
+// Base Sepolia gas is tiny (~0.00005 ETH for a full v2 stack at ~0.006 gwei).
+// CDP drips 0.0001 ETH per claim — one drip is usually enough.
+const MIN_ETH = ethers.parseEther(process.env.MIN_DEPLOY_ETH || "0.00012");
 const USDC = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
 
 async function main() {
@@ -24,7 +30,9 @@ async function main() {
   console.log(`deployer=${wallet.address} balance=${ethers.formatEther(bal)} ETH`);
 
   if (bal < MIN_ETH) {
-    console.log(`Need >= ${ethers.formatEther(MIN_ETH)} ETH on Base Sepolia. Still waiting on faucet.`);
+    console.log(`Need >= ${ethers.formatEther(MIN_ETH)} ETH on Base Sepolia.`);
+    console.log(`Fund via: node scripts/request-base-sepolia-faucet.js`);
+    console.log(`Or send ETH to ${wallet.address}`);
     process.exit(2);
   }
 
@@ -35,25 +43,33 @@ async function main() {
   );
   if (deploy.status !== 0) process.exit(deploy.status || 1);
 
-  // Pick newest deployments/base-sepolia-*.json
   const dir = path.join(__dirname, "..", "deployments");
-  const files = fs
-    .readdirSync(dir)
-    .filter((f) => f.startsWith("base-sepolia-") && f.endsWith(".json"))
-    .map((f) => ({ f, t: fs.statSync(path.join(dir, f)).mtimeMs }))
-    .sort((a, b) => b.t - a.t);
-  if (!files.length) throw new Error("No deployment record written");
-  const latest = JSON.parse(fs.readFileSync(path.join(dir, files[0].f), "utf8"));
   const stable = path.join(dir, "84532.base-sepolia.latest.json");
-  fs.writeFileSync(stable, JSON.stringify(latest, null, 2));
-  console.log("Wrote", stable);
+  if (!fs.existsSync(stable)) {
+    throw new Error(`Expected ${stable} from deploy.js`);
+  }
+  console.log("Using", stable);
 
   const smoke = spawnSync("npx", ["hardhat", "run", "scripts/smoke-base-sepolia.js", "--network", "base-sepolia"], {
     cwd: path.join(__dirname, ".."),
     stdio: "inherit",
     env: { ...process.env, DEPLOYMENT_FILE: stable, SMOKE_TOKEN: USDC },
   });
-  process.exit(smoke.status || 0);
+  if (smoke.status !== 0) process.exit(smoke.status || 1);
+
+  const check = spawnSync("npx", ["hardhat", "run", "scripts/post-deploy-check.js", "--network", "base-sepolia"], {
+    cwd: path.join(__dirname, ".."),
+    stdio: "inherit",
+    env: process.env,
+  });
+  if (check.status !== 0) process.exit(check.status || 1);
+
+  const verify = spawnSync("npx", ["hardhat", "run", "scripts/verify-deployment.js", "--network", "base-sepolia"], {
+    cwd: path.join(__dirname, ".."),
+    stdio: "inherit",
+    env: { ...process.env, DEPLOYMENT_FILE: stable },
+  });
+  process.exit(verify.status || 0);
 }
 
 main().catch((e) => {

@@ -134,19 +134,21 @@ Listener `abi.json` today matches **v1** settle/refund — **must update**.
 
 ---
 
-## Ephemeral Base Sepolia lab (filled after autonomous deploy)
+## Ephemeral Base Sepolia lab (deployed 2026-09-14)
 
 | Field | Value |
 |-------|-------|
 | Chain | Base Sepolia (`84532`) |
-| Deployer (ephemeral, discard after lab) | `0xB89fCa8025Ee60C91f74c49aDb4a0a55f5BeB166` |
-| OrderManager proxy | _pending — auto-deploy starts once this address has ≥0.002 ETH on Base Sepolia_ |
-| ProviderRegistry proxy | _pending_ |
-| TreasuryPool proxy | _pending_ |
-| Allowlisted token (USDC) | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
-| Status file | `deployments/TESTNET_DEPLOY_STATUS.txt` (poller retries every 10m for up to 6h) |
+| Deployer (ephemeral) | `0xB89fCa8025Ee60C91f74c49aDb4a0a55f5BeB166` |
+| OrderManager proxy | `0x5cB2B2b5f8E373bb9c44Cbc190FF103d2bd11716` |
+| OrderManager impl | `0xe74781Ee78239596c1c75a58eFaD3a707F201095` |
+| ProviderRegistry proxy | `0x53757B0575A6B04aA667834917c04207066CF854` |
+| TreasuryPool proxy | `0xE909CF48Fe7a288b844992aAB073CA760d03d0B2` |
+| Allowlisted token (Circle USDC) | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
+| Smoke mock token (full settle/refund) | `0x4A5Dd65292233C6AA037480e31CdB3483c138aB5` |
+| Artifact | [`deployments/84532.base-sepolia.latest.json`](../deployments/84532.base-sepolia.latest.json) |
+| Explorers | [OM](https://sepolia.basescan.org/address/0x5cB2B2b5f8E373bb9c44Cbc190FF103d2bd11716) · [Registry](https://sepolia.basescan.org/address/0x53757B0575A6B04aA667834917c04207066CF854) · [Pool](https://sepolia.basescan.org/address/0xE909CF48Fe7a288b844992aAB073CA760d03d0B2) |
 
-**Blocked on faucet (no captcha-free drip available in this environment).**  
-Send **≥ 0.002 ETH** on Base Sepolia to `0xB89fCa8025Ee60C91f74c49aDb4a0a55f5BeB166` (or fund via [Coinbase CDP faucet](https://docs.cdp.coinbase.com/faucets/introduction/quickstart) / QuickNode). The background poller will then run `scripts/wait-and-deploy-base-sepolia.js` (deploy + smoke) and write `deployments/84532.base-sepolia.latest.json`.
+Smoke: wiring check + full on-ramp settle / off-ramp refund / off-ramp settle (`FULL_SMOKE_OK`). Version `2.0.0`, default TreasuryPool provider active.
 
 Private keys for the ephemeral lab wallet are **not** committed. Production deploy should use your multisig / hot keys and overwrite these addresses in env.

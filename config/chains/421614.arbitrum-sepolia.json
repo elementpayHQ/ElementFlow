@@ -1,0 +1,28 @@
+{
+  "chainId": 421614,
+  "name": "Arbitrum Sepolia",
+  "hardhatNetwork": "arbitrum-sepolia",
+  "status": "planned",
+  "nativeToken": { "symbol": "ETH", "decimals": 18 },
+  "rpcEnv": "ARBITRUM_SEPOLIA_RPC",
+  "explorer": {
+    "browserURL": "https://sepolia.arbiscan.io",
+    "apiURL": "https://api-sepolia.arbiscan.io/api"
+  },
+  "explorerApiEnv": "ARBISCAN_API_KEY",
+  "tokens": [],
+  "contracts": {
+    "orderManagerProxy": null,
+    "orderManagerImpl": null,
+    "providerRegistryProxy": null,
+    "treasuryPoolProxy": null,
+    "notes": "Planned testnet scaffold."
+  },
+  "roles": {},
+  "deployment": {
+    "confirmations": 1,
+    "requireDistinctRoles": false,
+    "feeBpsDefault": 0,
+    "orderTtlDefault": 3600
+  }
+}

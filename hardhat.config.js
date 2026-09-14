@@ -1,6 +1,7 @@
 require("@nomicfoundation/hardhat-toolbox");
 require("@openzeppelin/hardhat-upgrades");
-require("dotenv").config();
+// override: true so a blank shell export (e.g. ETHERSCAN_API_KEY=) does not win over .env
+require("dotenv").config({ override: true });
 
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {
@@ -72,32 +73,17 @@ module.exports = {
     //   chainId: 4202,
     // },
   },
-  // Etherscan verification
+  // Etherscan API v2: apiKey MUST be a single string (not a per-network map).
+  // A map disables v2 → "Missing chainid parameter". One key covers Base + Base Sepolia.
+  // Create key: https://etherscan.io/apidashboard
   etherscan: {
-    apiKey: {
-      // Base
-      "base": process.env.BASESCAN_API_KEY || "",
-      "base-sepolia": process.env.BASESCAN_API_KEY || "",
-      
-      // Arbitrum
-      "arbitrum": process.env.ARBISCAN_API_KEY || "",
-      "arbitrum-sepolia": process.env.ARBISCAN_API_KEY || "",
-      
-      // Scroll
-      "scroll": process.env.SCROLLSCAN_API_KEY || "",
-      "scroll-sepolia": process.env.SCROLLSCAN_API_KEY || "",
-      
-      // Lisk
-      "lisk": process.env.LISKSCAN_API_KEY || "",
-      "lisk-sepolia": process.env.LISKSCAN_API_KEY || "",
-    },
+    apiKey: process.env.ETHERSCAN_API_KEY || process.env.BASESCAN_API_KEY || "",
     customChains: [
-      // Base
       {
         network: "base",
         chainId: 8453,
         urls: {
-          apiURL: "https://api.basescan.org/api",
+          apiURL: "https://api.etherscan.io/v2/api",
           browserURL: "https://basescan.org",
         },
       },
@@ -105,48 +91,45 @@ module.exports = {
         network: "base-sepolia",
         chainId: 84532,
         urls: {
-          apiURL: "https://api-sepolia.basescan.org/api",
+          apiURL: "https://api.etherscan.io/v2/api",
           browserURL: "https://sepolia.basescan.org",
         },
       },
-      
-      // Arbitrum
+      // Planned chains — when you flip status, prefer ETHERSCAN_API_KEY (v2) if listed
+      // on https://api.etherscan.io/v2/chainlist; otherwise use a chain-specific explorer key
+      // temporarily via a dedicated hardhat config override.
       {
         network: "arbitrum",
         chainId: 42161,
         urls: {
-          apiURL: "https://api.arbiscan.io/api",
-          browserURL: "https://arbiscan.io/",
+          apiURL: "https://api.etherscan.io/v2/api",
+          browserURL: "https://arbiscan.io",
         },
       },
       {
         network: "arbitrum-sepolia",
         chainId: 421614,
         urls: {
-          apiURL: "https://api-sepolia.arbiscan.io/api",
-          browserURL: "https://sepolia.arbiscan.io/",
+          apiURL: "https://api.etherscan.io/v2/api",
+          browserURL: "https://sepolia.arbiscan.io",
         },
       },
-      
-      // Scroll
       {
         network: "scroll",
         chainId: 534352,
         urls: {
-          apiURL: "https://api.scrollscan.com/api",
-          browserURL: "https://scrollscan.com/",
+          apiURL: "https://api.etherscan.io/v2/api",
+          browserURL: "https://scrollscan.com",
         },
       },
       {
         network: "scroll-sepolia",
         chainId: 534351,
         urls: {
-          apiURL: "https://api-sepolia.scrollscan.com/api",
-          browserURL: "https://sepolia.scrollscan.com/",
+          apiURL: "https://api.etherscan.io/v2/api",
+          browserURL: "https://sepolia.scrollscan.com",
         },
       },
-      
-      // Lisk (Note: Update these with actual Lisk explorer URLs when available)
       {
         network: "lisk",
         chainId: 1135,
@@ -164,6 +147,11 @@ module.exports = {
         },
       },
     ],
+  },
+  // Sourcify disabled during explorer verify — it can return HTML and fail the task
+  // after Etherscan already succeeded. Re-enable if you want dual submission.
+  sourcify: {
+    enabled: false,
   },
   gasReporter: {
     enabled: process.env.REPORT_GAS !== undefined,

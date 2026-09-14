@@ -1,0 +1,28 @@
+{
+  "chainId": 4202,
+  "name": "Lisk Sepolia",
+  "hardhatNetwork": "lisk-sepolia",
+  "status": "planned",
+  "nativeToken": { "symbol": "ETH", "decimals": 18 },
+  "rpcEnv": "LISK_SEPOLIA_RPC",
+  "explorer": {
+    "browserURL": "https://sepolia-explorer.lisk.com",
+    "apiURL": "https://sepolia-explorer.lisk.com/api"
+  },
+  "explorerApiEnv": "LISKSCAN_API_KEY",
+  "tokens": [],
+  "contracts": {
+    "orderManagerProxy": null,
+    "orderManagerImpl": null,
+    "providerRegistryProxy": null,
+    "treasuryPoolProxy": null,
+    "notes": "Planned testnet."
+  },
+  "roles": {},
+  "deployment": {
+    "confirmations": 1,
+    "requireDistinctRoles": false,
+    "feeBpsDefault": 0,
+    "orderTtlDefault": 3600
+  }
+}

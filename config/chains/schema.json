@@ -1,0 +1,95 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://elementpay.local/config/chains/schema.json",
+  "title": "ElementFlowChainConfig",
+  "type": "object",
+  "required": [
+    "chainId",
+    "name",
+    "hardhatNetwork",
+    "status",
+    "nativeToken",
+    "rpcEnv",
+    "explorer",
+    "explorerApiEnv",
+    "tokens",
+    "contracts",
+    "roles",
+    "deployment"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "chainId": { "type": "integer", "minimum": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "hardhatNetwork": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "enum": ["live", "testnet", "planned"] },
+    "nativeToken": {
+      "type": "object",
+      "required": ["symbol", "decimals"],
+      "properties": {
+        "symbol": { "type": "string" },
+        "decimals": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "rpcEnv": { "type": "string" },
+    "explorer": {
+      "type": "object",
+      "required": ["browserURL", "apiURL"],
+      "properties": {
+        "browserURL": { "type": "string" },
+        "apiURL": { "type": "string" }
+      }
+    },
+    "explorerApiEnv": { "type": "string" },
+    "tokens": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["symbol", "address", "decimals"],
+        "properties": {
+          "symbol": { "type": "string" },
+          "address": { "type": "string", "pattern": "^0x[a-fA-F0-9]{40}$" },
+          "decimals": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "contracts": {
+      "type": "object",
+      "required": [
+        "orderManagerProxy",
+        "orderManagerImpl",
+        "providerRegistryProxy",
+        "treasuryPoolProxy"
+      ],
+      "properties": {
+        "orderManagerProxy": { "type": ["string", "null"] },
+        "orderManagerImpl": { "type": ["string", "null"] },
+        "providerRegistryProxy": { "type": ["string", "null"] },
+        "treasuryPoolProxy": { "type": ["string", "null"] },
+        "notes": { "type": "string" }
+      }
+    },
+    "roles": {
+      "type": "object",
+      "properties": {
+        "admin": { "type": ["string", "null"] },
+        "upgrader": { "type": ["string", "null"] },
+        "pauser": { "type": ["string", "null"] },
+        "aggregator": { "type": ["string", "null"] },
+        "treasury": { "type": ["string", "null"] },
+        "feeRecipient": { "type": ["string", "null"] },
+        "multisig": { "type": ["string", "null"] }
+      }
+    },
+    "deployment": {
+      "type": "object",
+      "required": ["confirmations", "requireDistinctRoles"],
+      "properties": {
+        "confirmations": { "type": "integer", "minimum": 0 },
+        "requireDistinctRoles": { "type": "boolean" },
+        "feeBpsDefault": { "type": "integer", "minimum": 0 },
+        "orderTtlDefault": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

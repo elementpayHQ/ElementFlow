@@ -1,0 +1,28 @@
+{
+  "chainId": 534352,
+  "name": "Scroll",
+  "hardhatNetwork": "scroll",
+  "status": "planned",
+  "nativeToken": { "symbol": "ETH", "decimals": 18 },
+  "rpcEnv": "SCROLL_MAINNET_RPC",
+  "explorer": {
+    "browserURL": "https://scrollscan.com",
+    "apiURL": "https://api.scrollscan.com/api"
+  },
+  "explorerApiEnv": "SCROLLSCAN_API_KEY",
+  "tokens": [],
+  "contracts": {
+    "orderManagerProxy": null,
+    "orderManagerImpl": null,
+    "providerRegistryProxy": null,
+    "treasuryPoolProxy": null,
+    "notes": "Planned. Hardhat network stays commented until status flips to testnet/live."
+  },
+  "roles": {},
+  "deployment": {
+    "confirmations": 2,
+    "requireDistinctRoles": true,
+    "feeBpsDefault": 0,
+    "orderTtlDefault": 3600
+  }
+}
