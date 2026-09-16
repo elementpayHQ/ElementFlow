@@ -505,15 +505,104 @@ describe("Upgrade safety", function () {
   });
 
   describe("v2.1 refundAddress layout", function () {
-    async function v21LayoutFixture() {
-      return deployStack();
+    /**
+     * Deploy the frozen v2.0.0 OrderManager layout (no `_refundAddress`, `__gap` = 38).
+     * Production upgrades go v2.0 → v2.1; validating current-vs-current would miss layout bugs.
+     */
+    async function v20ProxyFixture() {
+      const [admin, aggregator, treasury, feeRecipient, user, otherUser] = await ethers.getSigners();
+      const MockERC20 = await ethers.getContractFactory("MockERC20");
+      const token = await MockERC20.deploy("USD Coin", "USDC", 6);
+      await token.mint(user.address, usdc(10_000));
+
+      const V20 = await ethers.getContractFactory("ElementFlowOrderManagerV20", admin);
+      const manager = await upgrades.deployProxy(
+        V20,
+        [admin.address, aggregator.address, treasury.address, feeRecipient.address, 0, 3600],
+        { kind: "uups", initializer: "initialize" },
+      );
+      await manager.connect(admin).setTokenAllowed(await token.getAddress(), true);
+
+      return { admin, aggregator, treasury, feeRecipient, user, otherUser, token, manager };
     }
 
-    it("validateUpgrade accepts ElementFlowOrderManager (gap shrink + mapping)", async function () {
-      const ctx = await loadFixture(v21LayoutFixture);
-      const Factory = await ethers.getContractFactory("ElementFlowOrderManager", ctx.admin);
-      await upgrades.validateUpgrade(await ctx.manager.getAddress(), Factory, { kind: "uups" });
-      expect(await ctx.manager.getVersion()).to.equal("2.1.0");
+    it("validateUpgrade accepts ElementFlowOrderManager from a real v2.0 proxy", async function () {
+      const ctx = await loadFixture(v20ProxyFixture);
+      expect(await ctx.manager.getVersion()).to.equal("2.0.0");
+
+      const V21 = await ethers.getContractFactory("ElementFlowOrderManager", ctx.admin);
+      await upgrades.validateUpgrade(await ctx.manager.getAddress(), V21, { kind: "uups" });
+    });
+
+    it("upgrades v2.0 → v2.1 in place and preserves pending OffRamp escrow", async function () {
+      const ctx = await loadFixture(v20ProxyFixture);
+      const tokenAddress = await ctx.token.getAddress();
+      const proxy = await ctx.manager.getAddress();
+
+      await ctx.token.connect(ctx.user).approve(proxy, usdc(500));
+      const tx = await ctx.manager
+        .connect(ctx.aggregator)
+        .createOrder(ctx.user.address, usdc(500), tokenAddress, OrderType.OffRamp, "v20-pending");
+      const receipt = await tx.wait();
+      const created = receipt.logs
+        .map((l) => {
+          try {
+            return ctx.manager.interface.parseLog(l);
+          } catch {
+            return null;
+          }
+        })
+        .find((p) => p && p.name === "OrderCreated");
+      const orderId = created.args.orderId;
+
+      expect(await ctx.manager.escrowedBalance(tokenAddress)).to.equal(usdc(500));
+
+      const V21 = await ethers.getContractFactory("ElementFlowOrderManager", ctx.admin);
+      const v21 = await upgrades.upgradeProxy(proxy, V21, { kind: "uups" });
+
+      expect(await v21.getAddress()).to.equal(proxy);
+      expect(await v21.getVersion()).to.equal("2.1.0");
+      expect(await v21.escrowedBalance(tokenAddress)).to.equal(usdc(500));
+      expect((await v21.getOrderRecord(orderId)).status).to.equal(OrderStatus.Pending);
+      // Pre-upgrade orders have no stored refundAddress → payout defaults to payer.
+      expect(await v21.getRefundAddress(orderId)).to.equal(ctx.user.address);
+
+      await v21.connect(ctx.aggregator).refundOrder(orderId);
+      expect(await ctx.token.balanceOf(ctx.user.address)).to.equal(usdc(10_000));
+    });
+
+    it("after v2.0 → v2.1 upgrade, createOrderWithRefund pays the distinct refundAddress", async function () {
+      const ctx = await loadFixture(v20ProxyFixture);
+      const proxy = await ctx.manager.getAddress();
+      const V21 = await ethers.getContractFactory("ElementFlowOrderManager", ctx.admin);
+      const v21 = await upgrades.upgradeProxy(proxy, V21, { kind: "uups" });
+
+      await ctx.token.connect(ctx.user).approve(proxy, usdc(200));
+      const tx = await v21
+        .connect(ctx.aggregator)
+        .createOrderWithRefund(
+          ctx.user.address,
+          ctx.otherUser.address,
+          usdc(200),
+          await ctx.token.getAddress(),
+          OrderType.OffRamp,
+          "post-upgrade-refund",
+        );
+      const receipt = await tx.wait();
+      const created = receipt.logs
+        .map((l) => {
+          try {
+            return v21.interface.parseLog(l);
+          } catch {
+            return null;
+          }
+        })
+        .find((p) => p && p.name === "OrderCreated");
+      const orderId = created.args.orderId;
+
+      const balOtherBefore = await ctx.token.balanceOf(ctx.otherUser.address);
+      await v21.connect(ctx.aggregator).refundOrder(orderId);
+      expect(await ctx.token.balanceOf(ctx.otherUser.address)).to.equal(balOtherBefore + usdc(200));
     });
   });
 });
