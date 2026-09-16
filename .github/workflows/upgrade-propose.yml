@@ -1,0 +1,57 @@
+name: Propose OM upgrade
+
+# Gated propose only — never auto-upgrade on merge.
+# Requires GitHub Environment `contract-upgrade-production` with 2 reviewers
+# (Elementpay / Aly / Joseph). Safe with UPGRADER_ROLE executes on-chain.
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: "Hardhat network (one chain per run)"
+        required: true
+        type: choice
+        options:
+          - base
+          - polygon
+          - bsc
+          - arbitrum
+          - scroll
+          - base-sepolia
+
+jobs:
+  propose:
+    runs-on: ubuntu-latest
+    environment: contract-upgrade-production
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - name: Guard — single chain only
+        run: |
+          echo "Proposing upgrade for ${{ inputs.network }} only (no multi-chain fan-out)."
+      - name: Compile + unit tests
+        run: |
+          npx hardhat compile
+          npx hardhat test
+      - name: Propose upgrade (impl + Safe batch)
+        env:
+          # Deployer used only to broadcast prepareUpgrade / deploy implementation.
+          # Must NOT hold UPGRADER_ROLE — Safe executes upgradeToAndCall.
+          PRIVATE_KEY: ${{ secrets.UPGRADE_PROPOSE_DEPLOYER_KEY }}
+          BASE_MAINNET_RPC: ${{ secrets.BASE_MAINNET_RPC }}
+          POLYGON_RPC: ${{ secrets.POLYGON_RPC }}
+          BSC_MAINNET_RPC: ${{ secrets.BSC_MAINNET_RPC }}
+          ARBITRUM_RPC: ${{ secrets.ARBITRUM_RPC }}
+          SCROLL_RPC: ${{ secrets.SCROLL_RPC }}
+          BASE_SEPOLIA_RPC: ${{ secrets.BASE_SEPOLIA_RPC }}
+        run: npx hardhat run scripts/propose-upgrade.js --network ${{ inputs.network }}
+      - name: Upload Safe batch + propose record
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: upgrade-propose-${{ inputs.network }}
+          path: |
+            safe-batches/upgrade-om-${{ inputs.network }}.json
+            deployments/*.upgrade-propose.latest.json

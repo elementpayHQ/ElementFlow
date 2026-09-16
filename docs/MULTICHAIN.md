@@ -81,9 +81,24 @@ Confirm on the explorer that each proxy shows **Read/Write as Proxy** with the i
 
 Never fan-out upgrades across chains in one action.
 
-## Order lifecycle (v2)
+## CI/CD: upgrade propose (not auto-deploy)
+
+**Merging a PR does not upgrade any chain.** Production upgrades are:
+
+1. Merge contract code to `main` (branch protection: PR + **2 approving reviews** from Elementpay / Aly / Joseph + CI status checks).
+2. Manually run GitHub Actions workflow **Propose OM upgrade** (`upgrade-propose.yml`) via `workflow_dispatch` for **one** network.
+3. Environment `contract-upgrade-production` requires **2 of** Elementpay / Aly / Joseph before the job runs.
+4. Job compiles, tests, runs `scripts/propose-upgrade.js` → uploads Safe Tx Builder JSON. Deployer key must **not** hold `UPGRADER_ROLE`.
+5. Safe owners with `UPGRADER_ROLE` import the batch and execute on that chain only.
+6. `post-deploy-check` + smoke; repeat per chain.
+
+Do **not** put `UPGRADER_ROLE` on a CI EOA. Do **not** auto-upgrade on push/merge/tag.
+
+## Order lifecycle (v2 / v2.1)
 
 Status: `None → Pending → Settled | Refunded`. Order id: `keccak256(chainId, address(this), requester, amount, token, orderType, intentKey)`.
+
+**v2.1 OffRamp refund destination:** optional create-time `refundAddress` via `createOrderWithRefund` / `createOrderWithProviderAndRefund`. Pull still from payer; `refundOrder(orderId)` unchanged (no `to` arg). `address(0)` => payer. `OrderRefunded` indexed `requester` field emits the **payout** address. Legacy `createOrder` unchanged.
 
 ```mermaid
 stateDiagram-v2
@@ -115,7 +130,7 @@ sequenceDiagram
     OM->>Adapter: payout net (+ feeRecipient fee)
   else refund
     Backend->>OM: refundOrder (or anyone after TTL)
-    OM->>User: payout full amount
+    OM->>User: payout full amount (or create-time refundAddress if set)
   end
 ```
 

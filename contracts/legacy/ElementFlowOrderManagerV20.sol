@@ -9,13 +9,13 @@ import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/ut
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import {OrderTypes} from "./libraries/OrderTypes.sol";
-import {IElementFlowOrderManager} from "./interfaces/IElementFlowOrderManager.sol";
-import {IOnRampProvider} from "./interfaces/IOnRampProvider.sol";
-import {IProviderRegistry} from "./interfaces/IProviderRegistry.sol";
+import {OrderTypes} from "../libraries/OrderTypes.sol";
+import {IElementFlowOrderManagerV20} from "./IElementFlowOrderManagerV20.sol";
+import {IOnRampProvider} from "../interfaces/IOnRampProvider.sol";
+import {IProviderRegistry} from "../interfaces/IProviderRegistry.sol";
 
 /**
- * @title ElementFlowOrderManager
+ * @title ElementFlowOrderManagerV20 (frozen layout for upgrade tests)
  * @notice Escrow and settlement engine for ElementFlow on-ramp (fiat -> crypto) and
  *         off-ramp (crypto -> fiat) orders.
  *
@@ -47,8 +47,8 @@ import {IProviderRegistry} from "./interfaces/IProviderRegistry.sol";
  *      Only the surplus above both is withdrawable or rescuable. v1 conflated all three,
  *      which allowed on-ramp settlement to pay out of off-ramp user escrow.
  */
-contract ElementFlowOrderManager is
-    IElementFlowOrderManager,
+contract ElementFlowOrderManagerV20 is
+    IElementFlowOrderManagerV20,
     Initializable,
     AccessControlUpgradeable,
     PausableUpgradeable,
@@ -151,13 +151,8 @@ contract ElementFlowOrderManager is
     /// @notice Route applied when a caller does not name one. bytes32(0) == internal liquidity.
     bytes32 public defaultProviderId;
 
-    /// @notice Optional OffRamp refund destination per order. Zero means pay `order.requester`.
-    /// @dev Parallel mapping (not a field on OrderTypes.Order) so existing packed order
-    ///      storage stays upgrade-compatible. Set only at create when payer ≠ refundAddress.
-    mapping(bytes32 => address) private _refundAddress;
-
     /// @dev Reserved for future variables. Shrink this — never move it — when adding state.
-    uint256[37] private __gap;
+    uint256[38] private __gap;
 
     /* --------------------------------------------------------------- modifiers */
 
@@ -262,7 +257,7 @@ contract ElementFlowOrderManager is
 
     /* -------------------------------------------------------- order creation */
 
-    /// @inheritdoc IElementFlowOrderManager
+    /// @inheritdoc IElementFlowOrderManagerV20
     /// @dev v1-compatible entrypoint: routes via `defaultProviderId` and derives the
     ///      idempotency key from the message hash, which the backend already generates
     ///      uniquely per order intent.
@@ -276,7 +271,6 @@ contract ElementFlowOrderManager is
         return
             _createOrder(
                 requester,
-                address(0),
                 amount,
                 token,
                 orderType,
@@ -286,7 +280,7 @@ contract ElementFlowOrderManager is
             );
     }
 
-    /// @inheritdoc IElementFlowOrderManager
+    /// @inheritdoc IElementFlowOrderManagerV20
     function createOrderWithProvider(
         address requester,
         uint256 amount,
@@ -296,69 +290,11 @@ contract ElementFlowOrderManager is
         bytes32 providerId,
         bytes32 intentKey
     ) external override returns (bytes32) {
-        return
-            _createOrder(
-                requester,
-                address(0),
-                amount,
-                token,
-                orderType,
-                messageHash,
-                providerId,
-                intentKey
-            );
-    }
-
-    /// @inheritdoc IElementFlowOrderManager
-    /// @dev OffRamp: pull from `payer`; refund to `refundAddress` (or payer if zero).
-    function createOrderWithRefund(
-        address payer,
-        address refundAddress,
-        uint256 amount,
-        address token,
-        OrderTypes.OrderType orderType,
-        string calldata messageHash
-    ) external override returns (bytes32) {
-        return
-            _createOrder(
-                payer,
-                refundAddress,
-                amount,
-                token,
-                orderType,
-                messageHash,
-                defaultProviderId,
-                keccak256(bytes(messageHash))
-            );
-    }
-
-    /// @inheritdoc IElementFlowOrderManager
-    function createOrderWithProviderAndRefund(
-        address payer,
-        address refundAddress,
-        uint256 amount,
-        address token,
-        OrderTypes.OrderType orderType,
-        string calldata messageHash,
-        bytes32 providerId,
-        bytes32 intentKey
-    ) external override returns (bytes32) {
-        return
-            _createOrder(
-                payer,
-                refundAddress,
-                amount,
-                token,
-                orderType,
-                messageHash,
-                providerId,
-                intentKey
-            );
+        return _createOrder(requester, amount, token, orderType, messageHash, providerId, intentKey);
     }
 
     function _createOrder(
-        address payer,
-        address refundAddress,
+        address requester,
         uint256 amount,
         address token,
         OrderTypes.OrderType orderType,
@@ -366,7 +302,7 @@ contract ElementFlowOrderManager is
         bytes32 providerId,
         bytes32 intentKey
     ) private whenNotPaused nonReentrant returns (bytes32 orderId) {
-        if (payer == address(0) || token == address(0)) revert ZeroAddress();
+        if (requester == address(0) || token == address(0)) revert ZeroAddress();
         if (amount == 0) revert ZeroAmount();
         if (bytes(messageHash).length == 0) revert EmptyMessageHash();
         if (uint8(orderType) > uint8(OrderTypes.OrderType.OffRamp)) revert InvalidOrderType();
@@ -375,18 +311,19 @@ contract ElementFlowOrderManager is
         // Either the user acts for themselves, or a trusted relayer acts for them.
         // v1 let anybody create an order for any address, which allowed an attacker to
         // burn a victim's ERC20 allowance and to grief order-id derivation.
-        if (msg.sender != payer && !hasRole(ORDER_CREATOR_ROLE, msg.sender)) {
-            revert NotOrderCreator(msg.sender, payer);
+        if (msg.sender != requester && !hasRole(ORDER_CREATOR_ROLE, msg.sender)) {
+            revert NotOrderCreator(msg.sender, requester);
         }
 
-        orderId = computeOrderId(payer, amount, token, orderType, intentKey);
+        orderId = computeOrderId(requester, amount, token, orderType, intentKey);
         if (_orders[orderId].status != OrderTypes.OrderStatus.None) revert OrderAlreadyExists(orderId);
 
         uint16 snapshotFeeBps = feeBps;
+        uint256 feeAmount = (amount * snapshotFeeBps) / MAX_BPS;
 
         // --- effects -------------------------------------------------------
         _orders[orderId] = OrderTypes.Order({
-            requester: payer,
+            requester: requester,
             orderType: orderType,
             status: OrderTypes.OrderStatus.Pending,
             feeBps: snapshotFeeBps,
@@ -397,14 +334,6 @@ contract ElementFlowOrderManager is
             providerId: providerId,
             messageHash: messageHash
         });
-
-        // address(0) => payer. Only store when distinct — sparse + getRefundAddress default.
-        {
-            address refundTo = refundAddress == address(0) ? payer : refundAddress;
-            if (refundTo != payer) {
-                _refundAddress[orderId] = refundTo;
-            }
-        }
 
         if (orderType == OrderTypes.OrderType.OffRamp) {
             escrowedBalance[token] += amount;
@@ -418,22 +347,21 @@ contract ElementFlowOrderManager is
 
         // --- interactions ---------------------------------------------------
         if (orderType == OrderTypes.OrderType.OffRamp) {
-            _pullExact(token, payer, amount);
+            _pullExact(token, requester, amount);
         }
 
         if (providerId != bytes32(0)) {
-            uint256 feeAmount = (amount * snapshotFeeBps) / MAX_BPS;
             IOnRampProvider(_resolveProvider(providerId)).onOrderCreated(
                 _buildContext(orderId, _orders[orderId], amount, feeAmount)
             );
         }
 
-        emit OrderCreated(orderId, token, payer, amount, messageHash, 0, orderType);
+        emit OrderCreated(orderId, token, requester, amount, messageHash, 0, orderType);
     }
 
     /* ------------------------------------------------------------ settlement */
 
-    /// @inheritdoc IElementFlowOrderManager
+    /// @inheritdoc IElementFlowOrderManagerV20
     function settleOrder(bytes32 orderId)
         external
         override
@@ -516,7 +444,7 @@ contract ElementFlowOrderManager is
 
     /* --------------------------------------------------------------- refunds */
 
-    /// @inheritdoc IElementFlowOrderManager
+    /// @inheritdoc IElementFlowOrderManagerV20
     function refundOrder(bytes32 orderId)
         external
         override
@@ -529,7 +457,7 @@ contract ElementFlowOrderManager is
     }
 
     /**
-     * @inheritdoc IElementFlowOrderManager
+     * @inheritdoc IElementFlowOrderManagerV20
      * @dev Permissionless once the order's TTL has elapsed. This is the system's
      *      liveness guarantee: if the aggregator stalls or censors, an off-ramp user can
      *      always recover their own escrow without needing anyone's cooperation.
@@ -549,8 +477,6 @@ contract ElementFlowOrderManager is
 
         address token = order.token;
         address requester = order.requester;
-        // Immutable create-time beneficiary. OrderRefunded.requester emits this payout address.
-        address payout = _refundPayout(orderId, requester);
         uint256 amount = order.amount;
         bytes32 providerId = order.providerId;
         uint256 feeAmount = (amount * order.feeBps) / MAX_BPS;
@@ -568,7 +494,7 @@ contract ElementFlowOrderManager is
 
         // --- interactions ------------------------------------------------------
         if (order.orderType == OrderTypes.OrderType.OffRamp) {
-            _payout(token, payout, amount);
+            _payout(token, requester, amount);
         }
 
         if (providerId != bytes32(0)) {
@@ -577,7 +503,7 @@ contract ElementFlowOrderManager is
             IOnRampProvider(_resolveProviderForRefund(providerId)).onOrderRefunded(ctx);
         }
 
-        emit OrderRefunded(orderId, token, payout, amount);
+        emit OrderRefunded(orderId, token, requester, amount);
     }
 
     /* ------------------------------------------------- legacy (v1) order drain */
@@ -746,7 +672,7 @@ contract ElementFlowOrderManager is
 
     /* ------------------------------------------------------------------ views */
 
-    /// @inheritdoc IElementFlowOrderManager
+    /// @inheritdoc IElementFlowOrderManagerV20
     /// @dev Bound to chain id and contract address so an intent signed for one deployment
     ///      can never collide with, or be replayed against, another. v1 keyed on
     ///      `block.timestamp`, which made ids both collision-prone (two orders from the
@@ -768,20 +694,13 @@ contract ElementFlowOrderManager is
         return balance > committed ? balance - committed : 0;
     }
 
-    /// @inheritdoc IElementFlowOrderManager
+    /// @inheritdoc IElementFlowOrderManagerV20
     function getOrderRecord(bytes32 orderId) external view override returns (OrderTypes.Order memory) {
         return _orders[orderId];
     }
 
-    /// @inheritdoc IElementFlowOrderManager
-    /// @dev Returns the create-time refund destination. Zero storage means payer (`requester`).
-    function getRefundAddress(bytes32 orderId) external view override returns (address) {
-        if (_orders[orderId].status == OrderTypes.OrderStatus.None) revert OrderNotFound(orderId);
-        return _refundPayout(orderId, _orders[orderId].requester);
-    }
-
     /**
-     * @inheritdoc IElementFlowOrderManager
+     * @inheritdoc IElementFlowOrderManagerV20
      * @dev Keeping this selector on the v1 shape is load-bearing: the production backend
      *      decodes the result positionally (`order_data[5]` is the status) and treats
      *      0/1/2 as Pending/Settled/Refunded. Returning v2's struct, or v2's raw enum
@@ -849,16 +768,10 @@ contract ElementFlowOrderManager is
     }
 
     function getVersion() external pure virtual returns (string memory) {
-        return "2.1.0";
+        return "2.0.0";
     }
 
     /* --------------------------------------------------------------- internals */
-
-    /// @dev Stored override or payer when unset.
-    function _refundPayout(bytes32 orderId, address payer) private view returns (address) {
-        address stored = _refundAddress[orderId];
-        return stored == address(0) ? payer : stored;
-    }
 
     /**
      * @dev Transfers `amount` in and asserts the contract actually received it.

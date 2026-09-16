@@ -7,7 +7,7 @@ import {OrderTypes} from "../libraries/OrderTypes.sol";
  * @title IElementFlowOrderManager
  * @notice External surface of the ElementFlow order manager.
  */
-interface IElementFlowOrderManager {
+interface IElementFlowOrderManagerV20 {
     /* ------------------------------------------------------------------ errors */
 
     error ZeroAddress();
@@ -83,28 +83,6 @@ interface IElementFlowOrderManager {
         bytes32 intentKey
     ) external returns (bytes32 orderId);
 
-    /// @notice OffRamp-friendly create: pull from `payer`, refund to `refundAddress`.
-    /// @dev `refundAddress == address(0)` defaults to `payer` (same as createOrder).
-    function createOrderWithRefund(
-        address payer,
-        address refundAddress,
-        uint256 amount,
-        address token,
-        OrderTypes.OrderType orderType,
-        string calldata messageHash
-    ) external returns (bytes32 orderId);
-
-    function createOrderWithProviderAndRefund(
-        address payer,
-        address refundAddress,
-        uint256 amount,
-        address token,
-        OrderTypes.OrderType orderType,
-        string calldata messageHash,
-        bytes32 providerId,
-        bytes32 intentKey
-    ) external returns (bytes32 orderId);
-
     function settleOrder(bytes32 orderId) external;
 
     function refundOrder(bytes32 orderId) external;
@@ -115,9 +93,6 @@ interface IElementFlowOrderManager {
 
     /// @notice Full v2 order record.
     function getOrderRecord(bytes32 orderId) external view returns (OrderTypes.Order memory);
-
-    /// @notice Create-time refund destination for OffRamp (payer when unset / zero).
-    function getRefundAddress(bytes32 orderId) external view returns (address);
 
     /**
      * @notice v1-compatible order view.
