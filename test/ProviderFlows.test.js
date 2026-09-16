@@ -311,6 +311,7 @@ describe("On-ramp provider abstraction", function () {
           .connect(ctx.aggregator)
           .createOrderWithProvider(
             ctx.user.address,
+            ethers.ZeroAddress,
             usdc(100),
             await ctx.token.getAddress(),
             OrderType.OnRamp,

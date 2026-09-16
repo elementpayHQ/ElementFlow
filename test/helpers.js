@@ -118,12 +118,18 @@ async function createOrder(ctx, overrides = {}) {
     messageHash = `order-${Math.random()}`,
     providerId = null,
     intentKey = null,
-    refundAddress = null,
+    refundAddress = ethers.ZeroAddress,
   } = overrides;
 
   const tokenAddress = await token.getAddress();
   const key = intentKey ?? intentKeyFor(messageHash);
   const payer = requester.address ?? requester;
+  const refund =
+    refundAddress == null
+      ? ethers.ZeroAddress
+      : typeof refundAddress === "string"
+        ? refundAddress
+        : (refundAddress.address ?? refundAddress);
 
   const orderId = await ctx.manager.computeOrderId(
     payer,
@@ -134,43 +140,16 @@ async function createOrder(ctx, overrides = {}) {
   );
 
   let tx;
-  if (refundAddress !== null) {
-    const refund =
-      typeof refundAddress === "string" ? refundAddress : refundAddress.address;
-    if (providerId === null) {
-      tx = await ctx.manager
-        .connect(signer)
-        .createOrderWithRefund(
-          payer,
-          refund,
-          amount,
-          tokenAddress,
-          orderType,
-          messageHash
-        );
-    } else {
-      tx = await ctx.manager
-        .connect(signer)
-        .createOrderWithProviderAndRefund(
-          payer,
-          refund,
-          amount,
-          tokenAddress,
-          orderType,
-          messageHash,
-          providerId,
-          key
-        );
-    }
-  } else if (providerId === null) {
+  if (providerId === null) {
     tx = await ctx.manager
       .connect(signer)
-      .createOrder(payer, amount, tokenAddress, orderType, messageHash);
+      .createOrder(payer, refund, amount, tokenAddress, orderType, messageHash);
   } else {
     tx = await ctx.manager
       .connect(signer)
       .createOrderWithProvider(
         payer,
+        refund,
         amount,
         tokenAddress,
         orderType,

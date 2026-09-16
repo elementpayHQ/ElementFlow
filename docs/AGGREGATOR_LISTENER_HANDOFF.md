@@ -18,11 +18,15 @@ Context
 - v2 default on-ramp liquidity lives on TreasuryPool (IOnRampProvider), registered via ProviderRegistry and set as defaultProviderId. Ops funds the pool with pool.fund(), not depositLiquidity on the manager (unless using internal providerId=0).
 
 Do NOT change:
-- createOrder(requester, amount, token, orderType, messageHash) argument order for the default path.
 - settleOrder(orderId) / refundOrder(orderId) call sites for happy path.
 - getOrder flat 8-tuple positional decode OR status numbering 0=Pending, 1=Settled, 2=Refunded (v2 remaps for backend compatibility).
 - OrderCreated indexed fields orderId/token/requester (same as v1).
 - Off-ramp ERC20 approve spender = OrderManager proxy.
+
+MUST change — createOrder ABI (v2.1):
+- createOrder(requester, refundAddress, amount, token, orderType, messageHash)
+- createOrderWithProvider(requester, refundAddress, amount, token, orderType, messageHash, providerId, intentKey)
+- `refundAddress == address(0)` => pay requester on refund. Partner OffRamp passes partner.refund_address.
 
 MUST change — Aggregator (element-pay-aggregator)
 1) Custom errors: stop matching revert strings like "Order is not pending" / "Order not found".

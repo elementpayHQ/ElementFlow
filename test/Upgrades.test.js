@@ -231,7 +231,7 @@ describe("Upgrade safety", function () {
       await expect(
         v2
           .connect(ctx.aggregator)
-          .createOrder(ctx.user.address, usdc(100), await ctx.token.getAddress(), OrderType.OffRamp, "blocked")
+          .createOrder(ctx.user.address, ethers.ZeroAddress, usdc(100), await ctx.token.getAddress(), OrderType.OffRamp, "blocked")
       ).to.be.revertedWithCustomError(v2, "EnforcedPause");
     });
 
@@ -358,7 +358,7 @@ describe("Upgrade safety", function () {
       );
       await ctx.v2
         .connect(ctx.aggregator)
-        .createOrder(ctx.user.address, amount, tokenAddress, OrderType.OffRamp, "post-upgrade");
+        .createOrder(ctx.user.address, ethers.ZeroAddress, amount, tokenAddress, OrderType.OffRamp, "post-upgrade");
 
       expect((await ctx.v2.getOrderRecord(orderId)).status).to.equal(OrderStatus.Pending);
 
@@ -571,7 +571,7 @@ describe("Upgrade safety", function () {
       expect(await ctx.token.balanceOf(ctx.user.address)).to.equal(usdc(10_000));
     });
 
-    it("after v2.0 → v2.1 upgrade, createOrderWithRefund pays the distinct refundAddress", async function () {
+    it("after v2.0 → v2.1 upgrade, createOrder pays the distinct refundAddress", async function () {
       const ctx = await loadFixture(v20ProxyFixture);
       const proxy = await ctx.manager.getAddress();
       const V21 = await ethers.getContractFactory("ElementFlowOrderManager", ctx.admin);
@@ -580,7 +580,7 @@ describe("Upgrade safety", function () {
       await ctx.token.connect(ctx.user).approve(proxy, usdc(200));
       const tx = await v21
         .connect(ctx.aggregator)
-        .createOrderWithRefund(
+        .createOrder(
           ctx.user.address,
           ctx.otherUser.address,
           usdc(200),

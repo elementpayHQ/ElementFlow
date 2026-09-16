@@ -263,11 +263,12 @@ contract ElementFlowOrderManager is
     /* -------------------------------------------------------- order creation */
 
     /// @inheritdoc IElementFlowOrderManager
-    /// @dev v1-compatible entrypoint: routes via `defaultProviderId` and derives the
-    ///      idempotency key from the message hash, which the backend already generates
-    ///      uniquely per order intent.
+    /// @dev Passes creator (`requester`) + `refundAddress`. Pull/allowance always from
+    ///      requester. Refund pays `refundAddress` when non-zero; otherwise requester.
+    ///      (`refundAddress == requester` is treated the same as unset.)
     function createOrder(
         address requester,
+        address refundAddress,
         uint256 amount,
         address token,
         OrderTypes.OrderType orderType,
@@ -276,7 +277,7 @@ contract ElementFlowOrderManager is
         return
             _createOrder(
                 requester,
-                address(0),
+                refundAddress,
                 amount,
                 token,
                 orderType,
@@ -289,6 +290,7 @@ contract ElementFlowOrderManager is
     /// @inheritdoc IElementFlowOrderManager
     function createOrderWithProvider(
         address requester,
+        address refundAddress,
         uint256 amount,
         address token,
         OrderTypes.OrderType orderType,
@@ -299,53 +301,6 @@ contract ElementFlowOrderManager is
         return
             _createOrder(
                 requester,
-                address(0),
-                amount,
-                token,
-                orderType,
-                messageHash,
-                providerId,
-                intentKey
-            );
-    }
-
-    /// @inheritdoc IElementFlowOrderManager
-    /// @dev OffRamp: pull from `payer`; refund to `refundAddress` (or payer if zero).
-    function createOrderWithRefund(
-        address payer,
-        address refundAddress,
-        uint256 amount,
-        address token,
-        OrderTypes.OrderType orderType,
-        string calldata messageHash
-    ) external override returns (bytes32) {
-        return
-            _createOrder(
-                payer,
-                refundAddress,
-                amount,
-                token,
-                orderType,
-                messageHash,
-                defaultProviderId,
-                keccak256(bytes(messageHash))
-            );
-    }
-
-    /// @inheritdoc IElementFlowOrderManager
-    function createOrderWithProviderAndRefund(
-        address payer,
-        address refundAddress,
-        uint256 amount,
-        address token,
-        OrderTypes.OrderType orderType,
-        string calldata messageHash,
-        bytes32 providerId,
-        bytes32 intentKey
-    ) external override returns (bytes32) {
-        return
-            _createOrder(
-                payer,
                 refundAddress,
                 amount,
                 token,

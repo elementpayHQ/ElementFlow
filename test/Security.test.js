@@ -28,7 +28,7 @@ describe("ElementFlowOrderManager — security controls", function () {
       await expect(
         ctx.manager
           .connect(ctx.outsider)
-          .createOrder(ctx.user.address, amount, await ctx.token.getAddress(), OrderType.OffRamp, "m")
+          .createOrder(ctx.user.address, ethers.ZeroAddress, amount, await ctx.token.getAddress(), OrderType.OffRamp, "m")
       )
         .to.be.revertedWithCustomError(ctx.manager, "NotOrderCreator")
         .withArgs(ctx.outsider.address, ctx.user.address);
@@ -253,6 +253,7 @@ describe("ElementFlowOrderManager — security controls", function () {
         await ctx.manager.getAddress(),
         ctx.manager.interface.encodeFunctionData("createOrder", [
           ctx.user.address,
+          ethers.ZeroAddress,
           amount,
           await ctx.evil.getAddress(),
           OrderType.OffRamp,
