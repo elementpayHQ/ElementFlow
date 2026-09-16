@@ -263,8 +263,9 @@ contract ElementFlowOrderManager is
     /* -------------------------------------------------------- order creation */
 
     /// @inheritdoc IElementFlowOrderManager
-    /// @dev Default entrypoint: routes via `defaultProviderId` and derives the
-    ///      idempotency key from the message hash. `refundAddress == 0` => payer.
+    /// @dev Passes creator (`requester`) + `refundAddress`. Pull/allowance always from
+    ///      requester. Refund pays `refundAddress` when non-zero; otherwise requester.
+    ///      (`refundAddress == requester` is treated the same as unset.)
     function createOrder(
         address requester,
         address refundAddress,
