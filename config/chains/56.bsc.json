@@ -1,13 +1,13 @@
 {
-  "chainId": 42161,
-  "name": "Arbitrum One",
-  "hardhatNetwork": "arbitrum",
+  "chainId": 56,
+  "name": "BNB Smart Chain",
+  "hardhatNetwork": "bsc",
   "status": "live",
-  "nativeToken": { "symbol": "ETH", "decimals": 18 },
-  "rpcEnv": "ARBITRUM_RPC",
+  "nativeToken": { "symbol": "BNB", "decimals": 18 },
+  "rpcEnv": "BSC_MAINNET_RPC",
   "explorer": {
-    "browserURL": "https://arbiscan.io",
-    "apiURL": "https://api.arbiscan.io/api"
+    "browserURL": "https://bscscan.com",
+    "apiURL": "https://api.bscscan.com/api"
   },
   "explorerApiEnv": "ETHERSCAN_API_KEY",
   "tokens": [],
@@ -24,7 +24,7 @@
     "multisig": "0x0764780a743CBF4CE114C072a8908fb37e5DC71F"
   },
   "deployment": {
-    "confirmations": 2,
+    "confirmations": 3,
     "requireDistinctRoles": false,
     "feeBpsDefault": 0,
     "orderTtlDefault": 3600

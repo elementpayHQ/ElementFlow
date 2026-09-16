@@ -18,20 +18,20 @@
     }
   ],
   "contracts": {
-    "orderManagerProxy": "0x55f2761afdD2bfBeDeE19D0439d686302CD2b150",
-    "orderManagerImpl": "0x6eFD13b4Daeec541F820282baD19A3716D65B59f",
+    "orderManagerProxy": "0x4CDa31fc90a1663FA6dBD58CC736097E2344bb00",
+    "orderManagerImpl": "0xbE8d22Cfcae47FF065502C8688792317E0E46fe5",
     "providerRegistryProxy": null,
     "treasuryPoolProxy": null,
-    "notes": "Pinned 2026-09-13 via on-chain probe: treasury+aggregator+getVersion=1.0.0 (v1 OrderManagement). Registry/Pool are v2-only and not yet deployed on Base."
+    "notes": "CREATE2 v2 OM proxy. v1 legacy at 0x55f276 is separate. v2.1 impl proposed — Safe must execute upgrade."
   },
   "roles": {
-    "admin": "0x1eCD465700E4212E807451E2807CB15f3aBf616b",
-    "upgrader": "0x1eCD465700E4212E807451E2807CB15f3aBf616b",
-    "pauser": "0x1eCD465700E4212E807451E2807CB15f3aBf616b",
-    "aggregator": "0x39A8a225DDc4a2980ca24467D67E67Af9C16a3d5",
+    "admin": "0x0764780a743CBF4CE114C072a8908fb37e5DC71F",
+    "upgrader": "0x0764780a743CBF4CE114C072a8908fb37e5DC71F",
+    "pauser": "0x0764780a743CBF4CE114C072a8908fb37e5DC71F",
+    "aggregator": "0x62db29D96c0E79f95864FA2ad67C40C7D3Bc1E90",
     "treasury": "0x7E82bAB1C405538521d7702b06F6AcD7950241Df",
-    "feeRecipient": null,
-    "multisig": null
+    "feeRecipient": "0x0764780a743CBF4CE114C072a8908fb37e5DC71F",
+    "multisig": "0x0764780a743CBF4CE114C072a8908fb37e5DC71F"
   },
   "deployment": {
     "confirmations": 2,

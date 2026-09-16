@@ -2,26 +2,30 @@
   "chainId": 534352,
   "name": "Scroll",
   "hardhatNetwork": "scroll",
-  "status": "planned",
+  "status": "live",
   "nativeToken": { "symbol": "ETH", "decimals": 18 },
-  "rpcEnv": "SCROLL_MAINNET_RPC",
+  "rpcEnv": "SCROLL_RPC",
   "explorer": {
     "browserURL": "https://scrollscan.com",
     "apiURL": "https://api.scrollscan.com/api"
   },
-  "explorerApiEnv": "SCROLLSCAN_API_KEY",
+  "explorerApiEnv": "ETHERSCAN_API_KEY",
   "tokens": [],
   "contracts": {
-    "orderManagerProxy": null,
+    "orderManagerProxy": "0x4CDa31fc90a1663FA6dBD58CC736097E2344bb00",
     "orderManagerImpl": null,
     "providerRegistryProxy": null,
     "treasuryPoolProxy": null,
-    "notes": "Planned. Hardhat network stays commented until status flips to testnet/live."
+    "notes": "CREATE2 OM proxy — upgrade via Safe UPGRADER"
   },
-  "roles": {},
+  "roles": {
+    "admin": "0x0764780a743CBF4CE114C072a8908fb37e5DC71F",
+    "upgrader": "0x0764780a743CBF4CE114C072a8908fb37e5DC71F",
+    "multisig": "0x0764780a743CBF4CE114C072a8908fb37e5DC71F"
+  },
   "deployment": {
     "confirmations": 2,
-    "requireDistinctRoles": true,
+    "requireDistinctRoles": false,
     "feeBpsDefault": 0,
     "orderTtlDefault": 3600
   }

@@ -58,6 +58,27 @@ module.exports = {
       chainId: 84532,
     },
 
+    polygon: {
+      url: process.env.POLYGON_RPC || "https://polygon-bor-rpc.publicnode.com",
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+      chainId: 137,
+    },
+    bsc: {
+      url: process.env.BSC_MAINNET_RPC || "https://bsc-dataseed.binance.org",
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+      chainId: 56,
+    },
+    arbitrum: {
+      url: process.env.ARBITRUM_RPC || "https://arb1.arbitrum.io/rpc",
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+      chainId: 42161,
+    },
+    scroll: {
+      url: process.env.SCROLL_RPC || "https://rpc.scroll.io",
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+      chainId: 534352,
+    },
+
     // // Arbitrum Networks
     // arbitrum: {
     //   url: process.env.ARBITRUM_MAINNET_RPC || "https://arb1.arbitrum.io/rpc",

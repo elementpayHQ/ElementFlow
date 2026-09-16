@@ -1,0 +1,39 @@
+{
+  "version": "1.0",
+  "chainId": "56",
+  "createdAt": 1789554359618,
+  "meta": {
+    "name": "ElementFlow OM upgrade to 2.1.0 \u2014 bsc",
+    "description": "UUPS upgradeToAndCall to 0x41f006ff1376E45c5f1E94502d95Bb820f033D9b (v2.1.0). Proxy stays 0x4CDa31fc90a1663FA6dBD58CC736097E2344bb00. Execute with Safe 0x0764780a743CBF4CE114C072a8908fb37e5DC71F (UPGRADER_ROLE).",
+    "txBuilderVersion": "1.18.0",
+    "createdFromSafeAddress": "0x0764780a743CBF4CE114C072a8908fb37e5DC71F",
+    "createdFromOwnerAddress": ""
+  },
+  "transactions": [
+    {
+      "to": "0x4CDa31fc90a1663FA6dBD58CC736097E2344bb00",
+      "value": "0",
+      "data": "0x4f1ef28600000000000000000000000041f006ff1376e45c5f1e94502d95bb820f033d9b00000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000",
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "newImplementation",
+            "type": "address"
+          },
+          {
+            "internalType": "bytes",
+            "name": "data",
+            "type": "bytes"
+          }
+        ],
+        "name": "upgradeToAndCall",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "newImplementation": "0x41f006ff1376E45c5f1E94502d95Bb820f033D9b",
+        "data": "0x"
+      }
+    }
+  ]
+}

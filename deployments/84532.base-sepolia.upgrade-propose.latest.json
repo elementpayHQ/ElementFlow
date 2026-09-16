@@ -1,0 +1,10 @@
+{
+  "network": "base-sepolia",
+  "chainId": 84532,
+  "proposedAt": "2026-09-16T10:57:28.943Z",
+  "proposer": "0x5001Addc75cB1A55c142eE4bE05D764A590919B9",
+  "proxy": "0xd3D65B25E8F0762E06123876507DAA5150cC1401",
+  "implementation": "0x5A7d855aA5C981Db7DC79656B5Dc9CDC1605FE97",
+  "previousVersion": "2.0.0",
+  "note": "Import safe-batches JSON into Safe; execute with UPGRADER."
+}

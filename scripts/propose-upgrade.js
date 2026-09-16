@@ -51,6 +51,8 @@ async function main() {
   console.log("prepareUpgrade (deploy impl if needed)...");
   const implAddress = await upgrades.prepareUpgrade(proxy, Factory, {
     kind: "uups",
+    // Avoid reusing the live v2.0 implementation when forceImport confuses OZ.
+    redeployImplementation: "always",
   });
   console.log("implementation:", implAddress);
 
