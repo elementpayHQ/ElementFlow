@@ -98,7 +98,7 @@ Do **not** put `UPGRADER_ROLE` on a CI EOA. Do **not** auto-upgrade on push/merg
 
 Status: `None → Pending → Settled | Refunded`. Order id: `keccak256(chainId, address(this), requester, amount, token, orderType, intentKey)`.
 
-**v2.1 OffRamp refund destination:** optional create-time `refundAddress` via `createOrderWithRefund` / `createOrderWithProviderAndRefund`. Pull still from payer; `refundOrder(orderId)` unchanged (no `to` arg). `address(0)` => payer. `OrderRefunded` indexed `requester` field emits the **payout** address. Legacy `createOrder` unchanged.
+**v2.1 OffRamp refund destination:** `createOrder(requester, refundAddress, …)` / `createOrderWithProvider(..., refundAddress, …)`. Pull still from payer; `refundOrder(orderId)` unchanged (no `to` arg). `address(0)` => payer. `OrderRefunded` indexed `requester` field emits the **payout** address.
 
 ```mermaid
 stateDiagram-v2

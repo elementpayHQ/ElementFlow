@@ -65,8 +65,11 @@ interface IElementFlowOrderManager {
 
     /* --------------------------------------------------------------- lifecycle */
 
+    /// @notice Create an order. Pull from `requester`; OffRamp refunds go to `refundAddress`.
+    /// @dev `refundAddress == address(0)` defaults to `requester` (payer).
     function createOrder(
         address requester,
+        address refundAddress,
         uint256 amount,
         address token,
         OrderTypes.OrderType orderType,
@@ -75,27 +78,6 @@ interface IElementFlowOrderManager {
 
     function createOrderWithProvider(
         address requester,
-        uint256 amount,
-        address token,
-        OrderTypes.OrderType orderType,
-        string calldata messageHash,
-        bytes32 providerId,
-        bytes32 intentKey
-    ) external returns (bytes32 orderId);
-
-    /// @notice OffRamp-friendly create: pull from `payer`, refund to `refundAddress`.
-    /// @dev `refundAddress == address(0)` defaults to `payer` (same as createOrder).
-    function createOrderWithRefund(
-        address payer,
-        address refundAddress,
-        uint256 amount,
-        address token,
-        OrderTypes.OrderType orderType,
-        string calldata messageHash
-    ) external returns (bytes32 orderId);
-
-    function createOrderWithProviderAndRefund(
-        address payer,
         address refundAddress,
         uint256 amount,
         address token,

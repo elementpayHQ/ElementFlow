@@ -347,7 +347,7 @@ describe("ElementFlowOrderManager — order lifecycle", function () {
       await expect(
         ctx.manager
           .connect(ctx.aggregator)
-          .createOrder(ethers.ZeroAddress, usdc(1), await ctx.token.getAddress(), OrderType.OffRamp, "m")
+          .createOrder(ethers.ZeroAddress, ethers.ZeroAddress, usdc(1), await ctx.token.getAddress(), OrderType.OffRamp, "m")
       ).to.be.revertedWithCustomError(ctx.manager, "ZeroAddress");
     });
 

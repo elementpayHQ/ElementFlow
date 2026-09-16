@@ -83,7 +83,7 @@ async function main() {
 
   // On-ramp create + settle
   const onMsg = `smoke-on-${Date.now()}`;
-  const onTx = await manager.createOrder(signer.address, amount, tokenAddr, 0, onMsg);
+  const onTx = await manager.createOrder(signer.address, ethers.ZeroAddress, amount, tokenAddr, 0, onMsg);
   const onRc = await onTx.wait();
   const onCreated = onRc.logs
     .map((l) => {
@@ -119,7 +119,7 @@ async function main() {
   // Off-ramp create + refund (exercises OrderRefunded rich event)
   await (await token.approve(await manager.getAddress(), amount)).wait();
   const offMsg = `smoke-off-${Date.now()}`;
-  const offTx = await manager.createOrder(signer.address, amount, tokenAddr, 1, offMsg);
+  const offTx = await manager.createOrder(signer.address, ethers.ZeroAddress, amount, tokenAddr, 1, offMsg);
   const offRc = await offTx.wait();
   const offCreated = offRc.logs
     .map((l) => {
