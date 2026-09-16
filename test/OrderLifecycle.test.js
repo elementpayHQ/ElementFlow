@@ -11,6 +11,7 @@ const {
   approve,
   intentKeyFor,
   usdc,
+  ONE_HOUR,
 } = require("./helpers");
 
 describe("ElementFlowOrderManager — order lifecycle", function () {
@@ -432,9 +433,93 @@ describe("ElementFlowOrderManager — order lifecycle", function () {
       ).to.be.revertedWithCustomError(ctx.manager, "OrderNotFound");
     });
 
-    it("reports version 2.0.0", async function () {
+    it("reports version 2.1.0", async function () {
       const ctx = await loadFixture(fixture);
-      expect(await ctx.manager.getVersion()).to.equal("2.0.0");
+      expect(await ctx.manager.getVersion()).to.equal("2.1.0");
+    });
+  });
+
+  describe("off-ramp: create-time refundAddress", function () {
+    it("refunds to refundAddress when payer ≠ refund destination", async function () {
+      const ctx = await loadFixture(fixture);
+      const amount = usdc(1000);
+      await approve(ctx, ctx.user, amount);
+
+      const payerBefore = await ctx.token.balanceOf(ctx.user.address);
+      const partnerBefore = await ctx.token.balanceOf(ctx.otherUser.address);
+
+      const { orderId } = await createOrder(ctx, {
+        amount,
+        orderType: OrderType.OffRamp,
+        refundAddress: ctx.otherUser.address,
+      });
+
+      expect(await ctx.manager.getRefundAddress(orderId)).to.equal(ctx.otherUser.address);
+      expect(await ctx.token.balanceOf(ctx.user.address)).to.equal(payerBefore - amount);
+
+      await expect(ctx.manager.connect(ctx.aggregator).refundOrder(orderId))
+        .to.emit(ctx.manager, "OrderRefunded")
+        .withArgs(orderId, await ctx.token.getAddress(), ctx.otherUser.address, amount);
+
+      expect(await ctx.token.balanceOf(ctx.user.address)).to.equal(payerBefore - amount);
+      expect(await ctx.token.balanceOf(ctx.otherUser.address)).to.equal(partnerBefore + amount);
+      expect(await ctx.manager.escrowedBalance(await ctx.token.getAddress())).to.equal(0);
+    });
+
+    it("treats refundAddress=0 as pay-to-payer (legacy createOrder semantics)", async function () {
+      const ctx = await loadFixture(fixture);
+      const amount = usdc(500);
+      await approve(ctx, ctx.user, amount);
+
+      const { orderId } = await createOrder(ctx, {
+        amount,
+        orderType: OrderType.OffRamp,
+        refundAddress: ethers.ZeroAddress,
+      });
+
+      expect(await ctx.manager.getRefundAddress(orderId)).to.equal(ctx.user.address);
+
+      await expect(ctx.manager.connect(ctx.aggregator).refundOrder(orderId))
+        .to.emit(ctx.manager, "OrderRefunded")
+        .withArgs(orderId, await ctx.token.getAddress(), ctx.user.address, amount);
+
+      expect(await ctx.token.balanceOf(ctx.user.address)).to.equal(usdc(10_000));
+    });
+
+    it("lets ORDER_CREATOR create for payer with a distinct refundAddress", async function () {
+      const ctx = await loadFixture(fixture);
+      const amount = usdc(250);
+      await approve(ctx, ctx.user, amount);
+
+      const { orderId } = await createOrder(ctx, {
+        signer: ctx.aggregator,
+        requester: ctx.user,
+        amount,
+        orderType: OrderType.OffRamp,
+        refundAddress: ctx.otherUser.address,
+      });
+
+      expect((await ctx.manager.getOrderRecord(orderId)).requester).to.equal(ctx.user.address);
+      expect(await ctx.manager.getRefundAddress(orderId)).to.equal(ctx.otherUser.address);
+    });
+
+    it("keeps refundOrder / refundExpiredOrder without a to argument", async function () {
+      const ctx = await loadFixture(fixture);
+      const amount = usdc(100);
+      await approve(ctx, ctx.user, amount);
+      const { orderId } = await createOrder(ctx, {
+        amount,
+        orderType: OrderType.OffRamp,
+        refundAddress: ctx.otherUser.address,
+      });
+
+      expect(ctx.manager.interface.getFunction("refundOrder").inputs).to.have.length(1);
+      expect(ctx.manager.interface.getFunction("refundExpiredOrder").inputs).to.have.length(1);
+
+      await time.increase(ONE_HOUR + 1);
+      await expect(ctx.manager.connect(ctx.outsider).refundExpiredOrder(orderId))
+        .to.emit(ctx.manager, "OrderRefunded")
+        .withArgs(orderId, await ctx.token.getAddress(), ctx.otherUser.address, amount);
     });
   });
 });

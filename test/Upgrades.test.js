@@ -166,7 +166,7 @@ describe("Upgrade safety", function () {
     it("keeps the same proxy address", async function () {
       const ctx = await loadFixture(upgradedFixture);
       expect(await ctx.v2.getAddress()).to.equal(await ctx.v1.getAddress());
-      expect(await ctx.v2.getVersion()).to.equal("2.0.0");
+      expect(await ctx.v2.getVersion()).to.equal("2.1.0");
     });
 
     it("preserves v1 storage: treasury and legacy orders", async function () {
@@ -501,6 +501,19 @@ describe("Upgrade safety", function () {
       expect(await upgraded.getProvider(require("./helpers").PARTNER_PROVIDER_ID)).to.equal(
         await ctx.partner.getAddress()
       );
+    });
+  });
+
+  describe("v2.1 refundAddress layout", function () {
+    async function v21LayoutFixture() {
+      return deployStack();
+    }
+
+    it("validateUpgrade accepts ElementFlowOrderManager (gap shrink + mapping)", async function () {
+      const ctx = await loadFixture(v21LayoutFixture);
+      const Factory = await ethers.getContractFactory("ElementFlowOrderManager", ctx.admin);
+      await upgrades.validateUpgrade(await ctx.manager.getAddress(), Factory, { kind: "uups" });
+      expect(await ctx.manager.getVersion()).to.equal("2.1.0");
     });
   });
 });
