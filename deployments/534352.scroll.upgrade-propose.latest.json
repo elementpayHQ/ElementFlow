@@ -1,0 +1,10 @@
+{
+  "network": "scroll",
+  "chainId": 534352,
+  "proposedAt": "2026-09-16T10:27:02.817Z",
+  "proposer": "0x5001Addc75cB1A55c142eE4bE05D764A590919B9",
+  "proxy": "0x4CDa31fc90a1663FA6dBD58CC736097E2344bb00",
+  "implementation": "0x71B13319d9fE1CC7B1C4c9B89054C9A591e52790",
+  "previousVersion": "2.0.0",
+  "note": "Import safe-batches JSON into Safe; execute with UPGRADER."
+}

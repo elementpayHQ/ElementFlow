@@ -95,6 +95,10 @@
       "address": "0xE909CF48Fe7a288b844992aAB073CA760d03d0B2",
       "txHash": "0x34a2aa389a78c7a87b136d4964d15ef7f2c4e4a7e156b032feccccbe52a76511",
       "kind": "uups"
+    },
+    {
+      "address": "0xd3D65B25E8F0762E06123876507DAA5150cC1401",
+      "kind": "uups"
     }
   ],
   "impls": {
@@ -1365,6 +1369,485 @@
           ]
         }
       }
+    },
+    "187a8e332fda5248235afbbf8b9e4e251f63eb2f10e26745e5903e0abfd8442c": {
+      "address": "0x4CDa31fc90a1663FA6dBD58CC736097E2344bb00",
+      "layout": {
+        "solcVersion": "0.8.22",
+        "storage": [
+          {
+            "label": "_legacyAggregatorAddress",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_address",
+            "contract": "ElementFlowOrderManager",
+            "src": "contracts/ElementFlowOrderManager.sol:122",
+            "renamedFrom": "_aggregatorAddress"
+          },
+          {
+            "label": "treasury",
+            "offset": 0,
+            "slot": "1",
+            "type": "t_address",
+            "contract": "ElementFlowOrderManager",
+            "src": "contracts/ElementFlowOrderManager.sol:124"
+          },
+          {
+            "label": "legacyOrders",
+            "offset": 0,
+            "slot": "2",
+            "type": "t_mapping(t_bytes32,t_struct(LegacyOrder)2766_storage)",
+            "contract": "ElementFlowOrderManager",
+            "src": "contracts/ElementFlowOrderManager.sol:126",
+            "renamedFrom": "orders"
+          },
+          {
+            "label": "_orders",
+            "offset": 0,
+            "slot": "3",
+            "type": "t_mapping(t_bytes32,t_struct(Order)5676_storage)",
+            "contract": "ElementFlowOrderManager",
+            "src": "contracts/ElementFlowOrderManager.sol:131"
+          },
+          {
+            "label": "escrowedBalance",
+            "offset": 0,
+            "slot": "4",
+            "type": "t_mapping(t_address,t_uint256)",
+            "contract": "ElementFlowOrderManager",
+            "src": "contracts/ElementFlowOrderManager.sol:133"
+          },
+          {
+            "label": "reservedLiquidity",
+            "offset": 0,
+            "slot": "5",
+            "type": "t_mapping(t_address,t_uint256)",
+            "contract": "ElementFlowOrderManager",
+            "src": "contracts/ElementFlowOrderManager.sol:135"
+          },
+          {
+            "label": "isTokenAllowed",
+            "offset": 0,
+            "slot": "6",
+            "type": "t_mapping(t_address,t_bool)",
+            "contract": "ElementFlowOrderManager",
+            "src": "contracts/ElementFlowOrderManager.sol:138"
+          },
+          {
+            "label": "feeRecipient",
+            "offset": 0,
+            "slot": "7",
+            "type": "t_address",
+            "contract": "ElementFlowOrderManager",
+            "src": "contracts/ElementFlowOrderManager.sol:142"
+          },
+          {
+            "label": "feeBps",
+            "offset": 20,
+            "slot": "7",
+            "type": "t_uint16",
+            "contract": "ElementFlowOrderManager",
+            "src": "contracts/ElementFlowOrderManager.sol:145"
+          },
+          {
+            "label": "orderTtl",
+            "offset": 22,
+            "slot": "7",
+            "type": "t_uint64",
+            "contract": "ElementFlowOrderManager",
+            "src": "contracts/ElementFlowOrderManager.sol:147"
+          },
+          {
+            "label": "providerRegistry",
+            "offset": 0,
+            "slot": "8",
+            "type": "t_contract(IProviderRegistry)5639",
+            "contract": "ElementFlowOrderManager",
+            "src": "contracts/ElementFlowOrderManager.sol:150"
+          },
+          {
+            "label": "defaultProviderId",
+            "offset": 0,
+            "slot": "9",
+            "type": "t_bytes32",
+            "contract": "ElementFlowOrderManager",
+            "src": "contracts/ElementFlowOrderManager.sol:152"
+          },
+          {
+            "label": "_refundAddress",
+            "offset": 0,
+            "slot": "10",
+            "type": "t_mapping(t_bytes32,t_address)",
+            "contract": "ElementFlowOrderManager",
+            "src": "contracts/ElementFlowOrderManager.sol:157"
+          },
+          {
+            "label": "__gap",
+            "offset": 0,
+            "slot": "11",
+            "type": "t_array(t_uint256)37_storage",
+            "contract": "ElementFlowOrderManager",
+            "src": "contracts/ElementFlowOrderManager.sol:160"
+          }
+        ],
+        "types": {
+          "t_address": {
+            "label": "address",
+            "numberOfBytes": "20"
+          },
+          "t_bool": {
+            "label": "bool",
+            "numberOfBytes": "1"
+          },
+          "t_bytes32": {
+            "label": "bytes32",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_bool)": {
+            "label": "mapping(address => bool)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_bytes32,t_struct(RoleData)24_storage)": {
+            "label": "mapping(bytes32 => struct AccessControlUpgradeable.RoleData)",
+            "numberOfBytes": "32"
+          },
+          "t_struct(AccessControlStorage)34_storage": {
+            "label": "struct AccessControlUpgradeable.AccessControlStorage",
+            "members": [
+              {
+                "label": "_roles",
+                "type": "t_mapping(t_bytes32,t_struct(RoleData)24_storage)",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(DeprecatedOwnableStorage)1187_storage": {
+            "label": "struct ElementFlowOrderManager.DeprecatedOwnableStorage",
+            "members": [
+              {
+                "label": "_owner",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(InitializableStorage)145_storage": {
+            "label": "struct Initializable.InitializableStorage",
+            "members": [
+              {
+                "label": "_initialized",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_initializing",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(PausableStorage)296_storage": {
+            "label": "struct PausableUpgradeable.PausableStorage",
+            "members": [
+              {
+                "label": "_paused",
+                "type": "t_bool",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(ReentrancyGuardStorage)360_storage": {
+            "label": "struct ReentrancyGuardUpgradeable.ReentrancyGuardStorage",
+            "members": [
+              {
+                "label": "_status",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(RoleData)24_storage": {
+            "label": "struct AccessControlUpgradeable.RoleData",
+            "members": [
+              {
+                "label": "hasRole",
+                "type": "t_mapping(t_address,t_bool)",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "adminRole",
+                "type": "t_bytes32",
+                "offset": 0,
+                "slot": "1"
+              }
+            ],
+            "numberOfBytes": "64"
+          },
+          "t_uint256": {
+            "label": "uint256",
+            "numberOfBytes": "32"
+          },
+          "t_uint64": {
+            "label": "uint64",
+            "numberOfBytes": "8"
+          },
+          "t_array(t_uint256)37_storage": {
+            "label": "uint256[37]",
+            "numberOfBytes": "1184"
+          },
+          "t_contract(IProviderRegistry)5639": {
+            "label": "contract IProviderRegistry",
+            "numberOfBytes": "20"
+          },
+          "t_enum(LegacyOrderStatus)2746": {
+            "label": "enum ElementFlowOrderManager.LegacyOrderStatus",
+            "members": [
+              "Pending",
+              "Completed",
+              "Cancelled"
+            ],
+            "numberOfBytes": "1"
+          },
+          "t_enum(OrderStatus)5652": {
+            "label": "enum OrderTypes.OrderStatus",
+            "members": [
+              "None",
+              "Pending",
+              "Settled",
+              "Refunded"
+            ],
+            "numberOfBytes": "1"
+          },
+          "t_enum(OrderType)5646": {
+            "label": "enum OrderTypes.OrderType",
+            "members": [
+              "OnRamp",
+              "OffRamp"
+            ],
+            "numberOfBytes": "1"
+          },
+          "t_mapping(t_address,t_uint256)": {
+            "label": "mapping(address => uint256)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_bytes32,t_address)": {
+            "label": "mapping(bytes32 => address)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_bytes32,t_struct(LegacyOrder)2766_storage)": {
+            "label": "mapping(bytes32 => struct ElementFlowOrderManager.LegacyOrder)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_bytes32,t_struct(Order)5676_storage)": {
+            "label": "mapping(bytes32 => struct OrderTypes.Order)",
+            "numberOfBytes": "32"
+          },
+          "t_string_storage": {
+            "label": "string",
+            "numberOfBytes": "32"
+          },
+          "t_struct(LegacyOrder)2766_storage": {
+            "label": "struct ElementFlowOrderManager.LegacyOrder",
+            "members": [
+              {
+                "label": "orderId",
+                "type": "t_bytes32",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "requester",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "provider",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "token",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "3"
+              },
+              {
+                "label": "amount",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "4"
+              },
+              {
+                "label": "status",
+                "type": "t_enum(LegacyOrderStatus)2746",
+                "offset": 0,
+                "slot": "5"
+              },
+              {
+                "label": "orderType",
+                "type": "t_enum(OrderType)5646",
+                "offset": 1,
+                "slot": "5"
+              },
+              {
+                "label": "messageHash",
+                "type": "t_string_storage",
+                "offset": 0,
+                "slot": "6"
+              }
+            ],
+            "numberOfBytes": "224"
+          },
+          "t_struct(Order)5676_storage": {
+            "label": "struct OrderTypes.Order",
+            "members": [
+              {
+                "label": "requester",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "orderType",
+                "type": "t_enum(OrderType)5646",
+                "offset": 20,
+                "slot": "0"
+              },
+              {
+                "label": "status",
+                "type": "t_enum(OrderStatus)5652",
+                "offset": 21,
+                "slot": "0"
+              },
+              {
+                "label": "feeBps",
+                "type": "t_uint16",
+                "offset": 22,
+                "slot": "0"
+              },
+              {
+                "label": "createdAt",
+                "type": "t_uint64",
+                "offset": 24,
+                "slot": "0"
+              },
+              {
+                "label": "token",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "expiresAt",
+                "type": "t_uint64",
+                "offset": 20,
+                "slot": "1"
+              },
+              {
+                "label": "amount",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "providerId",
+                "type": "t_bytes32",
+                "offset": 0,
+                "slot": "3"
+              },
+              {
+                "label": "messageHash",
+                "type": "t_string_storage",
+                "offset": 0,
+                "slot": "4"
+              }
+            ],
+            "numberOfBytes": "160"
+          },
+          "t_uint16": {
+            "label": "uint16",
+            "numberOfBytes": "2"
+          }
+        },
+        "namespaces": {
+          "erc7201:openzeppelin.storage.Ownable": [
+            {
+              "contract": "ElementFlowOrderManager",
+              "label": "_owner",
+              "type": "t_address",
+              "src": "contracts/ElementFlowOrderManager.sol:118",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.ReentrancyGuard": [
+            {
+              "contract": "ReentrancyGuardUpgradeable",
+              "label": "_status",
+              "type": "t_uint256",
+              "src": "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol:43",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Pausable": [
+            {
+              "contract": "PausableUpgradeable",
+              "label": "_paused",
+              "type": "t_bool",
+              "src": "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol:21",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.AccessControl": [
+            {
+              "contract": "AccessControlUpgradeable",
+              "label": "_roles",
+              "type": "t_mapping(t_bytes32,t_struct(RoleData)24_storage)",
+              "src": "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol:61",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Initializable": [
+            {
+              "contract": "Initializable",
+              "label": "_initialized",
+              "type": "t_uint64",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:69",
+              "offset": 0,
+              "slot": "0"
+            },
+            {
+              "contract": "Initializable",
+              "label": "_initializing",
+              "type": "t_bool",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:73",
+              "offset": 8,
+              "slot": "0"
+            }
+          ]
+        }
+      },
+      "allAddresses": [
+        "0x4CDa31fc90a1663FA6dBD58CC736097E2344bb00",
+        "0x5A7d855aA5C981Db7DC79656B5Dc9CDC1605FE97"
+      ]
     }
   }
 }

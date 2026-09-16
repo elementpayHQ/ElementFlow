@@ -1,13 +1,13 @@
 {
-  "chainId": 42161,
-  "name": "Arbitrum One",
-  "hardhatNetwork": "arbitrum",
+  "chainId": 137,
+  "name": "Polygon PoS",
+  "hardhatNetwork": "polygon",
   "status": "live",
-  "nativeToken": { "symbol": "ETH", "decimals": 18 },
-  "rpcEnv": "ARBITRUM_RPC",
+  "nativeToken": { "symbol": "POL", "decimals": 18 },
+  "rpcEnv": "POLYGON_RPC",
   "explorer": {
-    "browserURL": "https://arbiscan.io",
-    "apiURL": "https://api.arbiscan.io/api"
+    "browserURL": "https://polygonscan.com",
+    "apiURL": "https://api.polygonscan.com/api"
   },
   "explorerApiEnv": "ETHERSCAN_API_KEY",
   "tokens": [],
@@ -24,7 +24,7 @@
     "multisig": "0x0764780a743CBF4CE114C072a8908fb37e5DC71F"
   },
   "deployment": {
-    "confirmations": 2,
+    "confirmations": 3,
     "requireDistinctRoles": false,
     "feeBpsDefault": 0,
     "orderTtlDefault": 3600

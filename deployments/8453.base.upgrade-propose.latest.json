@@ -1,0 +1,10 @@
+{
+  "network": "base",
+  "chainId": 8453,
+  "proposedAt": "2026-09-16T10:24:08.147Z",
+  "proposer": "0x5001Addc75cB1A55c142eE4bE05D764A590919B9",
+  "proxy": "0x4CDa31fc90a1663FA6dBD58CC736097E2344bb00",
+  "implementation": "0xbE8d22Cfcae47FF065502C8688792317E0E46fe5",
+  "previousVersion": "2.0.0",
+  "note": "Import safe-batches JSON into Safe; execute with UPGRADER."
+}
